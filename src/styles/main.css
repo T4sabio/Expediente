@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body { font-family: 'IBM Plex Sans', sans-serif; }
+.font-mono-data { font-family: 'IBM Plex Mono', monospace; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #C7D3D0; border-radius: 8px; }
+.rail-btn.active { background: #E4F1EE; color: #12312E; border-left-color: #1F7A6C; }
+.rail-btn { border-left: 3px solid transparent; }
+.rail-btn-m.active { background: #12312E; color: #fff; border-color: #12312E; }
+.modal-backdrop { background: rgba(18, 49, 46, 0.45); }
+.fade-in { animation: fadeIn .15s ease-out; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px);} to { opacity: 1; transform: translateY(0);} }
+table.clinical thead th { font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: #5C6B67; font-weight: 600; }
+table.clinical tbody tr { border-top: 1px solid #EEF2F1; }
+table.clinical tbody tr:hover { background: #FAFCFC; }
+.chart-wrap { position: relative; height: 300px; }
+@media (max-width: 640px) { .chart-wrap { height: 240px; } }
+
+/* Rol de solo lectura: los puntos de entrada de escritura se ocultan en el cliente.
+   La barrera real es RLS en el servidor (supabase/002_auth_rls_audit.sql); esto
+   solo evita mostrar acciones que de todos modos el servidor rechazaría. */
+body.role-lectura [data-action="nuevo-paciente"],
+body.role-lectura [data-action="editar-paciente"],
+body.role-lectura form button[type="submit"] { display: none; }

@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dashboard Clínico</title>
+
+<!-- Tipografía: IBM Plex Sans para interfaz, IBM Plex Mono para valores clínicos -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<script type="module" src="/src/main.js"></script>
+</head>
+<body class="bg-canvas text-[#17211F] antialiased">
+
+  <!-- ============ PANTALLA DE CARGA INICIAL ============ -->
+  <div id="loadingScreen" class="fixed inset-0 bg-ink flex flex-col items-center justify-center z-50 text-white gap-3">
+    <svg class="animate-spin h-8 w-8" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" opacity="0.25"/>
+      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+    </svg>
+    <p class="text-sm tracking-wide text-white/80">Cargando expediente clínico…</p>
+  </div>
+
+  <!-- ============ PANTALLA DE LOGIN ============ -->
+  <div id="loginScreen" class="hidden fixed inset-0 bg-ink flex items-center justify-center z-40 px-4">
+    <form id="form-login" class="fade-in bg-white rounded-xl w-full max-w-sm p-6 shadow-xl">
+      <div class="flex items-center gap-2 mb-1">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 12h4l2 7 4-14 2 7h6" stroke="#1F8C74" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <h1 class="font-semibold text-[15px]">Ronda Clínica</h1>
+      </div>
+      <p id="loginSubtitle" class="text-xs text-[#5C6B67] mb-4">Inicia sesión con tu cuenta de personal para ver el expediente clínico.</p>
+      <div id="loginError" class="hidden text-xs text-critical bg-critical-soft rounded-md px-3 py-2 mb-3" role="alert" aria-live="assertive"></div>
+      <div class="grid grid-cols-1 gap-3">
+        <label class="text-xs text-[#5C6B67]">Correo institucional
+          <input required name="email" type="email" autocomplete="username" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="text-xs text-[#5C6B67]">Contraseña
+          <input required name="password" type="password" autocomplete="current-password" minlength="6" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label id="loginNombreLabel" class="hidden text-xs text-[#5C6B67]">Nombre completo
+          <input name="nombre" type="text" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+      </div>
+      <button type="submit" class="mt-4 w-full px-4 py-2 text-sm rounded-md bg-accent text-white font-medium">Iniciar sesión</button>
+      <button type="button" id="toggleSignupBtn" data-action="toggle-signup" class="mt-3 w-full text-xs text-[#5C6B67] hover:underline">¿Personal nuevo? Crear una cuenta</button>
+      <p class="mt-3 text-[11px] text-[#9AA6A2] leading-relaxed">Las cuentas nuevas quedan en modo "solo lectura" hasta que un médico les asigne rol de escritura.</p>
+    </form>
+  </div>
+
+  <!-- ============ BARRA SUPERIOR ============ -->
+  <header class="sticky top-0 z-30 bg-ink text-white">
+    <div class="flex flex-wrap items-center gap-3 px-4 md:px-6 py-3">
+      <div class="flex items-center gap-2 mr-2">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M3 12h4l2 7 4-14 2 7h6" stroke="#7FD9C4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="font-semibold tracking-tight text-[15px]">Ronda Clínica</span>
+      </div>
+
+      <div class="flex-1 min-w-[220px] relative">
+        <div class="relative">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" class="absolute left-3 top-1/2 -translate-y-1/2 opacity-60"><circle cx="11" cy="11" r="7" stroke="white" stroke-width="2"/><line x1="20" y1="20" x2="16.5" y2="16.5" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>
+          <input id="patientSearch" type="text" autocomplete="off" placeholder="Buscar por nombre o HC (ej. 2026-37294)…"
+            class="w-full bg-white/10 border border-white/15 text-white placeholder-white/50 text-sm rounded-md pl-9 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent focus:bg-ink">
+        </div>
+        <div id="searchResults" class="hidden absolute left-0 right-0 mt-1.5 bg-white text-[#17211F] rounded-lg shadow-xl border border-hairline max-h-80 overflow-y-auto z-50"></div>
+      </div>
+
+      <div class="w-full sm:w-auto sm:min-w-[160px]">
+        <select id="servicioFilter" class="w-full bg-white/10 border border-white/15 text-white text-sm rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent">
+          <option value="">Todos los servicios</option>
+        </select>
+      </div>
+
+      <button data-action="nuevo-paciente" class="flex items-center gap-1.5 px-3 py-2 rounded-md bg-accent hover:bg-accent/80 text-sm font-medium transition">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="white" stroke-width="2.2" stroke-linecap="round"/></svg>
+        <span class="hidden sm:inline">Nuevo paciente</span>
+      </button>
+
+      <button id="refreshBtn" data-action="refresh" title="Actualizar datos del paciente" class="p-2 rounded-md bg-white/10 hover:bg-white/20 transition">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M3 12a9 9 0 0 1 15.3-6.5M21 12a9 9 0 0 1-15.3 6.5" stroke="white" stroke-width="2" stroke-linecap="round"/><path d="M18 3v4h-4M6 21v-4h4" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+
+      <div id="userBadge" class="hidden items-center gap-2 pl-2 border-l border-white/15">
+        <div class="text-right leading-tight hidden md:block">
+          <div id="userNombre" class="text-xs font-medium"></div>
+          <div id="userRol" class="text-[10px] text-white/60"></div>
+        </div>
+        <button data-action="cerrar-sesion" title="Cerrar sesión" class="p-2 rounded-md bg-white/10 hover:bg-white/20 transition">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div class="flex min-h-[calc(100vh-56px)]">
+
+    <!-- ============ PANEL LATERAL DE NAVEGACIÓN ============ -->
+    <nav id="sideRail" class="w-16 md:w-56 shrink-0 bg-white border-r border-hairline py-3 hidden sm:flex flex-col gap-1">
+      <!-- los botones se insertan por JS -->
+    </nav>
+
+    <!-- ============ CONTENIDO PRINCIPAL ============ -->
+    <main class="flex-1 min-w-0">
+
+      <!-- Estado vacío -->
+      <div id="emptyState" class="flex flex-col items-center justify-center text-center px-6 py-24 text-[#5C6B67]">
+        <svg width="46" height="46" viewBox="0 0 24 24" fill="none" class="mb-4 opacity-60"><path d="M4 12h4l2 7 4-14 2 7h4" stroke="#5C6B67" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <p class="text-sm">Selecciona un paciente en la barra superior para ver su expediente.</p>
+      </div>
+
+      <div id="patientView" class="hidden">
+        <!-- Cabecera del paciente -->
+        <section id="patientHeader" class="bg-white border-b border-hairline px-4 md:px-6 py-5"></section>
+
+        <!-- Navegación de secciones en móvil -->
+        <div id="mobileRail" class="sm:hidden flex overflow-x-auto gap-2 px-4 py-2 bg-white border-b border-hairline"></div>
+
+        <!-- Contenedor de sección activa -->
+        <section id="sectionContainer" class="px-4 md:px-6 py-5"></section>
+      </div>
+    </main>
+  </div>
+
+  <!-- ============ TOAST ============ -->
+  <div id="toast" class="hidden fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium text-white fade-in"></div>
+
+  <!-- ================================================================
+       MODALES DE CAPTURA
+       ================================================================ -->
+
+  <!-- Signos Vitales -->
+  <div id="modal-vital" class="hidden fixed inset-0 z-40 modal-backdrop flex items-center justify-center p-4">
+    <form id="form-vital" class="fade-in bg-white rounded-xl w-full max-w-md p-5 shadow-xl">
+      <h3 class="font-semibold text-[15px] mb-4">Registrar signos vitales</h3>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="col-span-2 text-xs text-[#5C6B67]">Fecha y hora
+          <input required name="Fecha_Hora" type="datetime-local" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="text-xs text-[#5C6B67]">PA sistólica
+          <input required name="PA_Sistolica" type="number" step="0.1" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="text-xs text-[#5C6B67]">PA diastólica
+          <input required name="PA_Diastolica" type="number" step="0.1" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="text-xs text-[#5C6B67]">Frec. cardíaca
+          <input required name="Frecuencia_Cardiaca" type="number" step="0.1" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="text-xs text-[#5C6B67]">SpO2 (%)
+          <input required name="SpO2" type="number" step="0.1" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="text-xs text-[#5C6B67]">Temperatura (°C)
+          <input required name="Temperatura" type="number" step="0.1" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="text-xs text-[#5C6B67]">Frec. respiratoria
+          <input required name="Frecuencia_Respiratoria" type="number" step="0.1" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+      </div>
+      <div class="flex justify-end gap-2 mt-5">
+        <button type="button" data-action="close-modal" data-modal="modal-vital" class="px-4 py-2 text-sm rounded-md border border-hairline">Cancelar</button>
+        <button type="submit" class="px-4 py-2 text-sm rounded-md bg-accent text-white">Guardar</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Medicamento -->
+  <div id="modal-med" class="hidden fixed inset-0 z-40 modal-backdrop flex items-center justify-center p-4">
+    <form id="form-med" class="fade-in bg-white rounded-xl w-full max-w-md p-5 shadow-xl">
+      <h3 class="font-semibold text-[15px] mb-4">Agregar medicamento</h3>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="col-span-2 text-xs text-[#5C6B67]">Medicamento
+          <input required name="Nombre_Medicamento" type="text" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="col-span-2 text-xs text-[#5C6B67]">Dosis y frecuencia
+          <input required name="Dosis_Frecuencia" type="text" placeholder="Ej. 2g IV cada 8 horas" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="text-xs text-[#5C6B67]">Fecha de inicio
+          <input required name="Fecha_Inicio" type="date" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="text-xs text-[#5C6B67]">Estado
+          <select name="Activo" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+            <option value="Sí">Activo</option>
+            <option value="No">Inactivo</option>
+          </select>
+        </label>
+      </div>
+      <div class="flex justify-end gap-2 mt-5">
+        <button type="button" data-action="close-modal" data-modal="modal-med" class="px-4 py-2 text-sm rounded-md border border-hairline">Cancelar</button>
+        <button type="submit" class="px-4 py-2 text-sm rounded-md bg-accent text-white">Guardar</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Laboratorio -->
+  <div id="modal-lab" class="hidden fixed inset-0 z-40 modal-backdrop flex items-center justify-center p-4">
+    <form id="form-lab" class="fade-in bg-white rounded-xl w-full max-w-md p-5 shadow-xl">
+      <h3 class="font-semibold text-[15px] mb-4">Agregar resultado de laboratorio</h3>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="text-xs text-[#5C6B67]">Fecha
+          <input required name="Fecha" type="date" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="text-xs text-[#5C6B67]">Tipo de laboratorio
+          <input required name="Tipo_Lab" list="tipoLabList" type="text" placeholder="Ej. PCR, Leucocitos" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+          <datalist id="tipoLabList"></datalist>
+        </label>
+        <label class="text-xs text-[#5C6B67]">Valor numérico
+          <input name="Valor_Numerico" type="number" step="0.01" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="text-xs text-[#5C6B67]">Resultado (texto)
+          <input name="Resultado_Texto" type="text" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="col-span-2 text-xs text-[#5C6B67]">Enlace PDF del hospital
+          <input name="Enlace_PDF_Hospital" type="url" placeholder="https://…" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+      </div>
+      <div class="flex justify-end gap-2 mt-5">
+        <button type="button" data-action="close-modal" data-modal="modal-lab" class="px-4 py-2 text-sm rounded-md border border-hairline">Cancelar</button>
+        <button type="submit" class="px-4 py-2 text-sm rounded-md bg-accent text-white">Guardar</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Consulta -->
+  <div id="modal-consulta" class="hidden fixed inset-0 z-40 modal-backdrop flex items-center justify-center p-4">
+    <form id="form-consulta" class="fade-in bg-white rounded-xl w-full max-w-md p-5 shadow-xl">
+      <h3 class="font-semibold text-[15px] mb-4">Enviar interconsulta</h3>
+      <div class="grid grid-cols-1 gap-3">
+        <label class="text-xs text-[#5C6B67]">Departamento consultado
+          <input required name="Departamento_Consultado" type="text" placeholder="Ej. Neurología" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="text-xs text-[#5C6B67]">Fecha de envío
+          <input required name="Fecha_Envio" type="date" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+      </div>
+      <div class="flex justify-end gap-2 mt-5">
+        <button type="button" data-action="close-modal" data-modal="modal-consulta" class="px-4 py-2 text-sm rounded-md border border-hairline">Cancelar</button>
+        <button type="submit" class="px-4 py-2 text-sm rounded-md bg-accent text-white">Enviar</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Cultivo -->
+  <div id="modal-cultivo" class="hidden fixed inset-0 z-40 modal-backdrop flex items-center justify-center p-4">
+    <form id="form-cultivo" class="fade-in bg-white rounded-xl w-full max-w-md p-5 shadow-xl">
+      <h3 class="font-semibold text-[15px] mb-4">Enviar cultivo a microbiología</h3>
+      <div class="grid grid-cols-1 gap-3">
+        <label class="text-xs text-[#5C6B67]">Tipo de cultivo
+          <input required name="Tipo_Cultivo" type="text" placeholder="Ej. Hemocultivo" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="text-xs text-[#5C6B67]">Fecha de envío
+          <input required name="Fecha_Envio" type="date" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+      </div>
+      <div class="flex justify-end gap-2 mt-5">
+        <button type="button" data-action="close-modal" data-modal="modal-cultivo" class="px-4 py-2 text-sm rounded-md border border-hairline">Cancelar</button>
+        <button type="submit" class="px-4 py-2 text-sm rounded-md bg-accent text-white">Enviar</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Pendiente -->
+  <div id="modal-pendiente" class="hidden fixed inset-0 z-40 modal-backdrop flex items-center justify-center p-4">
+    <form id="form-pendiente" class="fade-in bg-white rounded-xl w-full max-w-md p-5 shadow-xl">
+      <h3 class="font-semibold text-[15px] mb-4">Nueva tarea pendiente</h3>
+      <div class="grid grid-cols-1 gap-3">
+        <label class="text-xs text-[#5C6B67]">Descripción de la tarea
+          <textarea required name="Descripcion_Tarea" rows="2" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm"></textarea>
+        </label>
+        <label class="text-xs text-[#5C6B67]">Fecha programada
+          <input name="Fecha_Programada" type="date" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="text-xs text-[#5C6B67]">Justificación / observaciones
+          <textarea name="Justificacion_Observaciones" rows="2" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm"></textarea>
+        </label>
+      </div>
+      <div class="flex justify-end gap-2 mt-5">
+        <button type="button" data-action="close-modal" data-modal="modal-pendiente" class="px-4 py-2 text-sm rounded-md border border-hairline">Cancelar</button>
+        <button type="submit" class="px-4 py-2 text-sm rounded-md bg-accent text-white">Guardar</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Responder interconsulta -->
+  <div id="modal-responder" class="hidden fixed inset-0 z-40 modal-backdrop flex items-center justify-center p-4">
+    <form id="form-responder" class="fade-in bg-white rounded-xl w-full max-w-md p-5 shadow-xl">
+      <h3 class="font-semibold text-[15px] mb-4">Registrar respuesta de interconsulta</h3>
+      <input type="hidden" name="_row">
+      <label class="text-xs text-[#5C6B67]">Respuesta del departamento
+        <textarea required name="Respuesta_Departamento" rows="4" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm"></textarea>
+      </label>
+      <div class="flex justify-end gap-2 mt-5">
+        <button type="button" data-action="close-modal" data-modal="modal-responder" class="px-4 py-2 text-sm rounded-md border border-hairline">Cancelar</button>
+        <button type="submit" class="px-4 py-2 text-sm rounded-md bg-accent text-white">Guardar respuesta</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Resolver cultivo -->
+  <div id="modal-resultado-cultivo" class="hidden fixed inset-0 z-40 modal-backdrop flex items-center justify-center p-4">
+    <form id="form-resultado-cultivo" class="fade-in bg-white rounded-xl w-full max-w-md p-5 shadow-xl">
+      <h3 class="font-semibold text-[15px] mb-4">Registrar resultado del cultivo</h3>
+      <input type="hidden" name="_row">
+      <div class="grid grid-cols-1 gap-3">
+        <label class="text-xs text-[#5C6B67]">Resultado
+          <select required name="Resultado" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+            <option value="Positivo">Positivo</option>
+            <option value="Negativo">Negativo</option>
+            <option value="Contaminado">Contaminado</option>
+          </select>
+        </label>
+        <label class="text-xs text-[#5C6B67]">Observaciones de microbiología
+          <textarea name="Observaciones_Microbiologia" rows="3" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm"></textarea>
+        </label>
+      </div>
+      <div class="flex justify-end gap-2 mt-5">
+        <button type="button" data-action="close-modal" data-modal="modal-resultado-cultivo" class="px-4 py-2 text-sm rounded-md border border-hairline">Cancelar</button>
+        <button type="submit" class="px-4 py-2 text-sm rounded-md bg-accent text-white">Guardar</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Nuevo paciente -->
+  <div id="modal-nuevo-paciente" class="hidden fixed inset-0 z-40 modal-backdrop flex items-center justify-center p-4">
+    <form id="form-nuevo-paciente" class="fade-in bg-white rounded-xl w-full max-w-lg p-5 shadow-xl max-h-[90vh] overflow-y-auto">
+      <h3 class="font-semibold text-[15px] mb-4">Registrar nuevo paciente</h3>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="text-xs text-[#5C6B67]">Historia Clínica (HC)
+          <input required name="HC" type="text" placeholder="Ej. 2026-37294" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm font-mono-data">
+        </label>
+        <label class="text-xs text-[#5C6B67]">Edad
+          <div class="mt-1 flex gap-1.5">
+            <input name="Edad" type="number" min="0" step="1" placeholder="Cantidad" class="w-1/2 border border-hairline rounded-md px-2 py-2 text-sm">
+            <select id="nuevoEdadUnidad" name="Edad_Unidad" class="w-1/2 border border-hairline rounded-md px-1 py-2 text-sm">
+              <option value="años">Años</option>
+              <option value="meses">Meses</option>
+              <option value="semanas">Semanas</option>
+            </select>
+          </div>
+        </label>
+        <label class="col-span-2 text-xs text-[#5C6B67]">Nombre completo
+          <input required name="Nombre_Completo" type="text" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="text-xs text-[#5C6B67]">Servicio
+          <input required name="Servicio" type="text" placeholder="Ej. Neurocirugía" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="text-xs text-[#5C6B67]">Cama
+          <input name="Cama" type="text" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="text-xs text-[#5C6B67]">Fecha de ingreso
+          <input name="Fecha_Ingreso" type="date" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="text-xs text-[#5C6B67]">No. Rayos X
+          <input name="Num_RayosX" type="text" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="col-span-2 text-xs text-[#5C6B67]">Motivo de consulta
+          <textarea name="Motivo_Consulta" rows="2" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm"></textarea>
+        </label>
+        <label class="col-span-2 text-xs text-[#5C6B67]">Diagnósticos / problemas
+          <textarea name="Diagnosticos" rows="4" placeholder="1. …&#10;1.1. …" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm font-mono-data"></textarea>
+        </label>
+      </div>
+      <div class="flex justify-end gap-2 mt-5">
+        <button type="button" data-action="close-modal" data-modal="modal-nuevo-paciente" class="px-4 py-2 text-sm rounded-md border border-hairline">Cancelar</button>
+        <button type="submit" class="px-4 py-2 text-sm rounded-md bg-accent text-white">Registrar paciente</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Editar paciente -->
+  <div id="modal-editar-paciente" class="hidden fixed inset-0 z-40 modal-backdrop flex items-center justify-center p-4">
+    <form id="form-editar-paciente" class="fade-in bg-white rounded-xl w-full max-w-lg p-5 shadow-xl max-h-[90vh] overflow-y-auto">
+      <h3 class="font-semibold text-[15px] mb-4">Editar datos del paciente</h3>
+      <input type="hidden" name="_row">
+      <div class="grid grid-cols-2 gap-3">
+        <label class="text-xs text-[#5C6B67]">Historia Clínica (HC)
+          <input disabled name="HC" type="text" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm font-mono-data bg-[#F5F7F7] text-[#5C6B67]">
+        </label>
+        <label class="text-xs text-[#5C6B67]">Edad
+          <div class="mt-1 flex gap-1.5">
+            <input name="Edad" type="number" min="0" step="1" placeholder="Cantidad" class="w-1/2 border border-hairline rounded-md px-2 py-2 text-sm">
+            <select id="editarEdadUnidad" name="Edad_Unidad" class="w-1/2 border border-hairline rounded-md px-1 py-2 text-sm">
+              <option value="años">Años</option>
+              <option value="meses">Meses</option>
+              <option value="semanas">Semanas</option>
+            </select>
+          </div>
+        </label>
+        <label class="col-span-2 text-xs text-[#5C6B67]">Nombre completo
+          <input required name="Nombre_Completo" type="text" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="text-xs text-[#5C6B67]">Servicio
+          <input required name="Servicio" type="text" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="text-xs text-[#5C6B67]">Cama
+          <input name="Cama" type="text" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="text-xs text-[#5C6B67]">Fecha de ingreso
+          <input name="Fecha_Ingreso" type="date" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="text-xs text-[#5C6B67]">No. Rayos X
+          <input name="Num_RayosX" type="text" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="col-span-2 text-xs text-[#5C6B67]">Motivo de consulta
+          <textarea name="Motivo_Consulta" rows="2" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm"></textarea>
+        </label>
+        <label class="col-span-2 text-xs text-[#5C6B67]">Diagnósticos / problemas
+          <textarea name="Diagnosticos" rows="4" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm font-mono-data"></textarea>
+        </label>
+      </div>
+      <div class="flex items-center justify-between gap-2 mt-5">
+        <button type="button" data-action="pedir-eliminar-paciente" class="px-3 py-2 text-sm rounded-md text-critical hover:bg-critical-soft transition">Eliminar paciente</button>
+        <div class="flex gap-2">
+          <button type="button" data-action="close-modal" data-modal="modal-editar-paciente" class="px-4 py-2 text-sm rounded-md border border-hairline">Cancelar</button>
+          <button type="submit" class="px-4 py-2 text-sm rounded-md bg-accent text-white">Guardar cambios</button>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <!-- Confirmar eliminación de paciente (borrado lógico, doble confirmación) -->
+  <div id="modal-eliminar-paciente" class="hidden fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4">
+    <form id="form-eliminar-paciente" class="fade-in bg-white rounded-xl w-full max-w-md p-5 shadow-xl">
+      <h3 class="font-semibold text-[15px] mb-2 text-critical">Eliminar paciente</h3>
+      <input type="hidden" name="_row">
+      <p id="eliminarPacienteAviso" class="text-sm text-[#3C4A46] mb-3"></p>
+      <p class="text-xs text-[#5C6B67] mb-3">El paciente y su historial quedarán ocultos y podrán restaurarse después; no se borra nada de forma permanente. Escribe el nombre completo del paciente para confirmar.</p>
+      <label class="text-xs text-[#5C6B67]">Nombre completo del paciente
+        <input required name="confirmacion" type="text" autocomplete="off" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+      </label>
+      <div id="eliminarPacienteError" class="hidden text-xs text-critical mt-2" role="alert" aria-live="assertive"></div>
+      <div class="flex justify-end gap-2 mt-5">
+        <button type="button" data-action="close-modal" data-modal="modal-eliminar-paciente" class="px-4 py-2 text-sm rounded-md border border-hairline">Cancelar</button>
+        <button type="submit" class="px-4 py-2 text-sm rounded-md bg-critical text-white">Eliminar paciente</button>
+      </div>
+    </form>
+  </div>
+
+</body>
+</html>
