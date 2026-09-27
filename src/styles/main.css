@@ -47,3 +47,51 @@ body.role-lectura form button[type="submit"] { display: none; }
    rojo con un mensaje justo debajo (ver src/views/formValidation.js). */
 .field-invalid { border-color: #C0392B !important; }
 .field-error-msg:empty { display: none; }
+
+
+/* No penalizar a personas que prefieren menos movimiento ni bloquear el renderizado
+   de secciones largas que están fuera del viewport. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+#sectionContainer > * { content-visibility: auto; contain-intrinsic-size: 1px 640px; }
+#sectionContainer[aria-busy="true"] { cursor: progress; }
+
+
+/* Preferencias de presentación: cambian densidad sin alterar la semántica clínica. */
+body.density-compact #sectionContainer table.clinical td,
+body.density-compact #sectionContainer table.clinical th { padding-top: 0.4rem; padding-bottom: 0.4rem; }
+body.density-compact #sectionContainer .rounded-lg { border-radius: 0.5rem; }
+body.density-compact #sectionContainer { padding-top: 1rem; padding-bottom: 1rem; }
+body.density-comfortable #sectionContainer table.clinical td,
+body.density-comfortable #sectionContainer table.clinical th { padding-top: 0.85rem; padding-bottom: 0.85rem; }
+body.density-comfortable #sectionContainer { padding-top: 1.5rem; padding-bottom: 1.5rem; }
+
+/* Alto contraste: eleva contraste de texto secundario y bordes sin convertir los estados
+   clínicos en una escala cromática ambigua. */
+body.contrast-high { --ui-secondary: #23322f; --ui-border: #9BA9A5; }
+body.contrast-high [class*="text-[#5C6B67]"],
+body.contrast-high [class*="text-[#7C8784]"],
+body.contrast-high [class*="text-[#9AA6A2]"] { color: #23322f !important; }
+body.contrast-high [class*="border-hairline"] { border-color: #8D9D98 !important; }
+body.contrast-high .bg-canvas { background-color: #FFFFFF !important; }
+body.contrast-high .bg-accent-soft { background-color: #D6EAE5 !important; }
+body.contrast-high :focus-visible { outline: 3px solid #12312E !important; outline-offset: 2px; }
+
+/* Impresión profesional: cabecera/identificador y pie de página se repiten por página. */
+.print-confidential { margin-top: 6px; font-size: 10px; font-weight: 600; letter-spacing: .02em; color: #333; }
+@page { margin: 14mm 12mm 16mm; }
+@media print {
+  .print-only { min-height: 100vh; position: relative; }
+  .print-header { border-bottom: 1px solid #999; padding-bottom: 10px; }
+  .print-only::after { content: "Documento clínico confidencial · Uso restringido a personal autorizado"; position: fixed; bottom: -10mm; left: 0; right: 0; text-align: center; font-size: 8px; color: #666; }
+  .print-section { break-inside: auto; }
+  .print-section table { break-inside: auto; }
+  .print-section tr { break-inside: avoid; }
+}

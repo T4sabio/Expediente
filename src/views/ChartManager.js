@@ -1,15 +1,28 @@
-import { Chart, LineController, LineElement, PointElement, LinearScale, CategoryScale, Filler, Tooltip, Legend } from 'chart.js';
-
-Chart.register(LineController, LineElement, PointElement, LinearScale, CategoryScale, Filler, Tooltip, Legend);
-
-/** Dueño de la instancia activa de Chart.js (antes era la variable global `activeChart`). */
+/** Dueño de la instancia activa de Chart.js. Chart.js se carga bajo demanda para
+ * que el dashboard inicial no pague el coste de una librería que solo se necesita
+ * en las secciones de gráficos. */
 export class ChartManager {
   #chart = null;
+  #chartCtor = null;
+  #loadPromise = null;
 
-  render(canvasId, labels, datasets) {
+  async #getChart() {
+    if (this.#chartCtor) return this.#chartCtor;
+    if (!this.#loadPromise) {
+      this.#loadPromise = import('chart.js').then(({ Chart, LineController, LineElement, PointElement, LinearScale, CategoryScale, Filler, Tooltip, Legend }) => {
+        Chart.register(LineController, LineElement, PointElement, LinearScale, CategoryScale, Filler, Tooltip, Legend);
+        this.#chartCtor = Chart;
+        return Chart;
+      });
+    }
+    return this.#loadPromise;
+  }
+
+  async render(canvasId, labels, datasets) {
     this.destroy();
+    const Chart = await this.#getChart();
     const canvas = document.getElementById(canvasId);
-    if (!canvas) return;
+    if (!canvas?.isConnected) return;
     this.#chart = new Chart(canvas.getContext('2d'), {
       type: 'line',
       data: { labels, datasets },

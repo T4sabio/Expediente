@@ -36,6 +36,13 @@ export class ModalManager {
       }
     }
     modal.classList.remove('hidden');
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const heading = form?.querySelector('h3, h2, [data-modal-title]');
+    if (heading) {
+      if (!heading.id) heading.id = `${id}-title`;
+      modal.setAttribute('aria-labelledby', heading.id);
+    }
     this.#openStack.push({ id, trigger: this.#doc.activeElement });
     this.#focusFirst(modal);
   }

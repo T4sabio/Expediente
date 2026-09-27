@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { VitalSigns } from '../src/models/VitalSigns.js';
 import { Medication } from '../src/models/Medication.js';
 import { Patient } from '../src/models/Patient.js';
-import { LabResult } from '../src/models/ClinicalRecords.js';
+import { LabResult, PendingTask } from '../src/models/ClinicalRecords.js';
+import { PatientRecord } from '../src/models/PatientRecord.js';
 import { ValidationError } from '../src/utils/errors.js';
 
 const vitalForm = (over = {}) => ({
@@ -52,4 +53,31 @@ test('LabResult: valor vacío -> null y enlaces solo http(s)', () => {
   assert.equal(l.Valor_Numerico, null);
   assert.equal(l.hasNumericValue, false);
   assert.throws(() => LabResult.fromForm({ Fecha: '2026-09-24', Tipo_Lab: 'PCR', Enlace_PDF_Hospital: 'javascript:alert(1)' }, 'x'), ValidationError);
+});
+
+
+test('PatientRecord: insertar en página 2 actualiza el total sin desplazar filas visibles', () => {
+  const record = new PatientRecord({
+    patient: new Patient({ HC: 'x', Nombre_Completo: 'Paciente' }),
+    tasks: Array.from({ length: 25 }, (_, i) => new PendingTask({ id: i + 1, HC: 'x', Fecha_Solicitud: `2026-09-${String(27 - Math.floor(i / 3)).padStart(2, '0')}`, Descripcion_Tarea: `Tarea ${i + 1}` })),
+    pagination: { tasks: { page: 2, pageSize: 25, total: 50, totalPages: 2, listKey: 'tasks' } }
+  });
+  const next = record.withUpsertedItem('tasks', new PendingTask({ id: 99, HC: 'x', Fecha_Solicitud: '2026-09-27', Descripcion_Tarea: 'Nueva' }));
+  assert.equal(next.tasks.length, 25);
+  assert.equal(next.tasks[0].id, record.tasks[0].id);
+  assert.equal(next.pagination.tasks.total, 51);
+  assert.equal(next.pagination.tasks.totalPages, 3);
+});
+
+test('PatientRecord: DELETE Realtime en fila visible no contamina una página distinta y corrige el total', () => {
+  const tasks = Array.from({ length: 25 }, (_, i) => new PendingTask({ id: i + 1, HC: 'x', Fecha_Solicitud: '2026-09-27', Descripcion_Tarea: `Tarea ${i + 1}` }));
+  const record = new PatientRecord({
+    patient: new Patient({ HC: 'x', Nombre_Completo: 'Paciente' }),
+    tasks,
+    pagination: { tasks: { page: 2, pageSize: 25, total: 50, totalPages: 2, listKey: 'tasks' } }
+  });
+  const next = record.withRealtimeEvent('DB_Pendientes', { eventType: 'DELETE', old: { id: 99, HC: 'x' } });
+  assert.equal(next.tasks.length, 25);
+  assert.equal(next.tasks.some(row => row.id === 13), true);
+  assert.equal(next.pagination.tasks.total, 49);
 });

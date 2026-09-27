@@ -1,12 +1,15 @@
 import { SECTIONS, SEARCH, DEFAULT_AGE_UNIT } from '../utils/constants.js';
 import { calendarDateOf, todayISODate } from '../utils/formatters.js';
 import { Patient } from '../models/Patient.js';
+import { listKeyForTable } from '../models/PatientRecord.js';
 import { VitalSigns } from '../models/VitalSigns.js';
 import { Medication } from '../models/Medication.js';
 import { LabResult, Consultation, Culture, PendingTask } from '../models/ClinicalRecords.js';
 import { sectionViewFor } from '../views/sections/index.js';
-import { ConflictError, isNetworkError } from '../utils/errors.js';
+import { ConflictError, InactiveUserError, isNetworkError } from '../utils/errors.js';
 import { reportError } from '../utils/errorReporter.js';
+import { markPerformance, measurePerformance } from '../utils/performance.js';
+import { countTimelineUnread, getTimelineReadAt, markTimelineRead, readUiPreferences, writeUiPreferences } from '../utils/preferences.js';
 
 /**
  * Orquestador: escucha eventos del DOM (delegación por data-action), llama al ApiService,
@@ -25,13 +28,24 @@ export class DashboardController {
   #pendingEditModificadoEn = null; // sello de la última edición conocida, para detectar conflictos
   #unsubscribeRealtime = null;
   #realtimeDebounce = null;
+  #idleTimer = null;
+  #lastActivityAt = 0;
+  #signOutReason = null;
+  #palette = null;
+  #timelineSeq = 0;
+  #activityHandler = () => this.#touchActivity();
+  #visibilityHandler = () => this.#handleVisibilityChange();
+  static IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 
-  constructor({ api, auth, state, view, modals, toast, charts }) {
+  constructor({ api, auth, state, view, modals, toast, charts, palette = null }) {
     this.#api = api; this.#auth = auth; this.#state = state; this.#view = view;
-    this.#modals = modals; this.#toast = toast; this.#charts = charts;
+    this.#modals = modals; this.#toast = toast; this.#charts = charts; this.#palette = palette;
+    const prefs = readUiPreferences();
+    this.#state.set({ density: prefs.density, highContrast: prefs.highContrast });
 
     this.#actions = {
       'switch-section': el => this.switchSection(el.dataset.section),
+      'page-section': el => this.#loadSectionPage(el.dataset.listKey, Number(el.dataset.page)),
       'open-modal': el => { this.#resetConditionalFields(el.dataset.modal); this.#modals.open(el.dataset.modal); },
       'close-modal': el => this.#modals.close(el.dataset.modal),
       'select-patient': el => this.#selectByHC(el.dataset.hc),
@@ -49,19 +63,25 @@ export class DashboardController {
       'responder-consulta': el => this.#modals.open('modal-responder', { _row: el.dataset.id }),
       'resultado-cultivo': el => this.#modals.open('modal-resultado-cultivo', { _row: el.dataset.id }),
       'cerrar-sesion': () => this.#signOut(),
+      'bloquear-sesion': () => this.#signOut('Sesión bloqueada por inactividad o por solicitud del usuario.'),
       'imprimir-expediente': () => this.#printRecord(),
-      'toggle-signup': () => { this.#signupMode = !this.#signupMode; this.#view.setSignupMode(this.#signupMode); }
+      'toggle-signup': () => { this.#signupMode = !this.#signupMode; this.#view.setSignupMode(this.#signupMode); },
+      'open-command-palette': () => this.#openCommandPalette(),
+      'open-novedades': () => this.#openNovedades(),
+      'mark-timeline-read': () => this.#markTimelineRead(),
+      'cycle-density': () => this.#cycleDensity(),
+      'toggle-contrast': () => this.#toggleHighContrast()
     };
 
     // Formularios que solo agregan un registro al paciente abierto.
-    const record = (modal, build, save, message) => form => this.#submitRecord(form, modal, build, save, message);
+    const record = (listKey, modal, build, save, message) => form => this.#submitRecord(form, listKey, modal, build, save, message);
     this.#submitHandlers = {
-      'form-vital': record('modal-vital', (f, hc) => VitalSigns.fromForm(f, hc), e => this.#api.addVitalSigns(e), 'Signos vitales registrados'),
-      'form-med': record('modal-med', (f, hc) => Medication.fromForm(f, hc), e => this.#api.addMedication(e), 'Medicamento agregado'),
-      'form-lab': record('modal-lab', (f, hc) => LabResult.fromForm(f, hc), e => this.#api.addLab(e), 'Resultado de laboratorio agregado'),
-      'form-consulta': record('modal-consulta', (f, hc) => Consultation.fromForm(f, hc), e => this.#api.addConsultation(e), 'Interconsulta enviada'),
-      'form-cultivo': record('modal-cultivo', (f, hc) => Culture.fromForm(f, hc), e => this.#api.addCulture(e), 'Cultivo enviado a microbiología'),
-      'form-pendiente': record('modal-pendiente', (f, hc) => PendingTask.fromForm(f, hc), e => this.#api.addTask(e), 'Tarea pendiente agregada'),
+      'form-vital': record('vitals', 'modal-vital', (f, hc) => VitalSigns.fromForm(f, hc), e => this.#api.addVitalSigns(e), 'Signos vitales registrados'),
+      'form-med': record('medications', 'modal-med', (f, hc) => Medication.fromForm(f, hc), e => this.#api.addMedication(e), 'Medicamento agregado'),
+      'form-lab': record('labs', 'modal-lab', (f, hc) => LabResult.fromForm(f, hc), e => this.#api.addLab(e), 'Resultado de laboratorio agregado'),
+      'form-consulta': record('consultations', 'modal-consulta', (f, hc) => Consultation.fromForm(f, hc), e => this.#api.addConsultation(e), 'Interconsulta enviada'),
+      'form-cultivo': record('cultures', 'modal-cultivo', (f, hc) => Culture.fromForm(f, hc), e => this.#api.addCulture(e), 'Cultivo enviado a microbiología'),
+      'form-pendiente': record('tasks', 'modal-pendiente', (f, hc) => PendingTask.fromForm(f, hc), e => this.#api.addTask(e), 'Tarea pendiente agregada'),
       'form-pendiente-rapido': form => this.#addQuickTask(form),
       'form-responder': form => this.#submitSimple(form, 'modal-responder', 'Respuesta registrada', f =>
         this.#api.answerConsultation(Number(f._row), String(f.Respuesta_Departamento).trim(),
@@ -81,7 +101,9 @@ export class DashboardController {
      El expediente completo nunca se carga hasta haber autenticado.
      ================================================================ */
   async init() {
-    this.#view.buildRail(SECTIONS);
+    try {
+      this.#view.buildRail(SECTIONS);
+    this.#view.setUiPreferences(this.#state.get());
     this.#state.subscribe((s, prev) => this.#onStateChange(s, prev));
     this.#bindEvents();
     this.#view.hideLoading();
@@ -90,33 +112,56 @@ export class DashboardController {
     if (session) await this.#onSignedIn();
     else this.#view.showLoginScreen();
 
-    this.#auth.onAuthStateChange(async s => {
-      if (s && !this.#state.get().authed) await this.#onSignedIn();
-      if (!s && this.#state.get().authed) this.#onSignedOut();
-    });
+      this.#auth.onAuthStateChange(async s => {
+        if (s && !this.#state.get().authed) await this.#onSignedIn();
+        if (!s && this.#state.get().authed) this.#onSignedOut();
+      });
+    } catch (err) {
+      reportError(err, { origin: 'bootstrap' });
+      this.#view.showFatalError('No se pudo iniciar la aplicación. Verifica la configuración y la conexión.');
+    }
   }
 
   async #onSignedIn() {
-    this.#state.set({ authed: true });
-    this.#view.hideLoginScreen();
     try {
       const profile = await this.#auth.getMyProfile();
+      if (profile.activo === false) {
+        throw new InactiveUserError();
+      }
+      const session = await this.#auth.getSession();
+      const userId = session?.user?.id ?? null;
+      this.#state.set({ authed: true, userId, syncStatus: 'syncing', lastSyncedAt: null });
+      this.#view.hideLoginScreen();
+      this.#view.clearLoginError();
       this.#view.renderUser(profile);
-    } catch { /* la UI seguirá funcionando; el servidor decide qué se puede hacer */ }
-    try {
-      this.#state.set({ servicios: await this.#api.listServicios() });
+      this.#startIdleWatch();
+      try {
+        this.#state.set({ servicios: await this.#api.listServicios() });
+      } catch (err) {
+        this.#toast.show('Error al cargar servicios. Intenta actualizar.', 'error');
+        reportError(err, { origin: 'load-services', operation: 'listServicios' });
+      }
+      void this.#loadRound();
     } catch (err) {
-      this.#toast.show('Error al cargar servicios: ' + err.message, 'error');
+      reportError(err, { origin: 'profile', errorCode: err?.code ?? 'PROFILE_ERROR' });
+      await this.#signOut(err instanceof InactiveUserError ? err.message : 'No se pudo verificar tu acceso.');
     }
   }
 
   #onSignedOut() {
+    this.#stopIdleWatch();
     this.#loadSeq++; this.#searchSeq++;
     this.#stopRealtime();
-    this.#state.set({ authed: false, record: null, currentHC: null, searchResults: null, servicios: [] });
+    this.#state.set({ authed: false, record: null, currentHC: null, searchResults: null, servicios: [], round: [], timelineLoadedFor: null, syncStatus: 'idle', lastSyncedAt: null, newActivityCount: 0, lastViewedTimelineAt: 0, userId: null });
     this.#view.hideUser();
     this.#view.setSearchText('');
     this.#view.showLoginScreen();
+    if (this.#signOutReason) {
+      this.#view.showLoginError(this.#signOutReason);
+      this.#signOutReason = null;
+    } else {
+      this.#view.clearLoginError();
+    }
   }
 
   async #submitLogin(form) {
@@ -136,8 +181,19 @@ export class DashboardController {
     }
   }
 
-  async #signOut() {
-    try { await this.#auth.signOut(); } catch (err) { this.#toast.show(err.message, 'error'); }
+  async #signOut(reason = null) {
+    this.#signOutReason = reason;
+    try {
+      await this.#auth.signOut();
+      // No dependemos de que el listener de Supabase llegue a tiempo;
+      // limpiar el estado local también hace seguro el cierre durante bootstrap.
+      this.#onSignedOut();
+    } catch (err) {
+      // Never leave a clinical screen visible just because remote logout failed.
+      this.#onSignedOut();
+      this.#toast.show('La sesión local se bloqueó, pero no se pudo confirmar el cierre con el servidor.', 'warn');
+      reportError(err, { origin: 'signout' });
+    }
   }
 
   /**
@@ -151,25 +207,53 @@ export class DashboardController {
     if (modalId === 'modal-cultivo') document.getElementById('cultivoIntervaloWrap')?.classList.add('hidden');
   }
 
-  #printRecord() {
-    const { record } = this.#state.get();
+  async #printRecord() {
+    const state = this.#state.get();
+    const record = state.record;
     if (!record) { this.#toast.show('Selecciona un paciente primero.', 'error'); return; }
-    const g = record.patient;
+
+    let printableRecord = record;
+    if (state.timelineLoadedFor !== record.patient.HC) {
+      try {
+        const timeline = await this.#api.getPatientTimeline(record.patient.HC, { limit: 80 });
+        printableRecord = record.withTimeline(timeline);
+      } catch (err) {
+        reportError(err, { action: 'print-timeline' });
+      }
+    }
+
+    const g = printableRecord.patient;
     const ctx = { charts: { render() {}, destroy() {} }, today: todayISODate() };
     const body = SECTIONS.map(s => {
-      const html = sectionViewFor(s.id).render(record, ctx);
+      const html = sectionViewFor(s.id).render(printableRecord, ctx);
       return `<section class="print-section"><h2 class="print-section-title">${s.label}</h2>${html}</section>`;
     }).join('');
 
     const container = document.createElement('div');
     container.className = 'print-only';
-    container.innerHTML = `
-      <div class="print-header">
-        <div class="print-meta">HC ${g.HC} · Impreso ${new Date().toLocaleString('es-GT')}</div>
-        <h1 class="print-name">${g.Nombre_Completo}</h1>
-        <div class="print-subline">${g.Servicio || '—'} · Cama ${g.Cama || '—'} · ${g.Edad || ''}</div>
-      </div>
-      ${body}`;
+
+    const header = document.createElement('div');
+    header.className = 'print-header';
+    const meta = document.createElement('div');
+    meta.className = 'print-meta';
+    const profile = state.userId ? document.getElementById('userNombre')?.textContent?.trim() : '';
+    meta.textContent = `CONFIDENCIAL · HC ${g.HC} · Impreso ${new Date().toLocaleString('es-GT')}${profile ? ` · ${profile}` : ''}`;
+    const name = document.createElement('h1');
+    name.className = 'print-name';
+    name.textContent = g.Nombre_Completo || 'Paciente';
+    const subline = document.createElement('div');
+    subline.className = 'print-subline';
+    subline.textContent = `${g.Servicio || '—'} · Cama ${g.Cama || '—'} · ${g.Edad || ''}`;
+    const confidentiality = document.createElement('p');
+    confidentiality.className = 'print-confidential';
+    confidentiality.textContent = 'Documento clínico confidencial. Uso restringido a personal autorizado.';
+    header.append(confidentiality);
+    header.append(meta, name, subline);
+    container.appendChild(header);
+
+    const bodyContainer = document.createElement('div');
+    bodyContainer.innerHTML = body;
+    container.appendChild(bodyContainer);
     document.body.appendChild(container);
 
     const cleanup = () => { container.remove(); window.removeEventListener('afterprint', cleanup); };
@@ -177,7 +261,59 @@ export class DashboardController {
     window.print();
   }
 
+  #startIdleWatch() {
+    this.#stopIdleWatch();
+    if (!globalThis.window) return;
+    this.#lastActivityAt = 0;
+    this.#touchActivity();
+  }
+
+  #stopIdleWatch() {
+    if (this.#idleTimer) globalThis.clearTimeout(this.#idleTimer);
+    this.#idleTimer = null;
+    const w = globalThis.window;
+    w?.removeEventListener('pointerdown', this.#activityHandler);
+    w?.removeEventListener('keydown', this.#activityHandler);
+    w?.removeEventListener('scroll', this.#activityHandler);
+    w?.removeEventListener('touchstart', this.#activityHandler);
+    document.removeEventListener('visibilitychange', this.#visibilityHandler);
+  }
+
+  #handleVisibilityChange() {
+    if (document.visibilityState !== 'visible' || !this.#state.get().authed) return;
+    const elapsed = this.#lastActivityAt ? Date.now() - this.#lastActivityAt : 0;
+    if (elapsed >= DashboardController.IDLE_TIMEOUT_MS) {
+      void this.#signOut('La sesión se cerró por 15 minutos de inactividad. Inicia sesión nuevamente para continuar.');
+      return;
+    }
+    this.#touchActivity();
+  }
+
+  #touchActivity() {
+    if (!this.#state.get().authed) return;
+    const now = Date.now();
+    if (now - this.#lastActivityAt < 5000) return;
+    this.#lastActivityAt = now;
+    if (this.#idleTimer) globalThis.clearTimeout(this.#idleTimer);
+    this.#idleTimer = globalThis.setTimeout(() => {
+      if (Date.now() - this.#lastActivityAt >= DashboardController.IDLE_TIMEOUT_MS) {
+        void this.#signOut('La sesión se cerró por 15 minutos de inactividad. Inicia sesión nuevamente para continuar.');
+      } else {
+        this.#touchActivity();
+      }
+    }, DashboardController.IDLE_TIMEOUT_MS + 50);
+  }
+
   #bindEvents() {
+    const w = globalThis.window;
+    w?.addEventListener('pointerdown', this.#activityHandler, { passive: true });
+    w?.addEventListener('keydown', this.#activityHandler, { passive: true });
+    w?.addEventListener('scroll', this.#activityHandler, { passive: true });
+    w?.addEventListener('touchstart', this.#activityHandler, { passive: true });
+    document.addEventListener('visibilitychange', this.#visibilityHandler, { passive: true });
+    document.addEventListener('keydown', e => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); this.#openCommandPalette(); }
+    });
     document.addEventListener('click', e => this.#onClick(e));
     document.addEventListener('submit', e => this.#onSubmit(e));
     document.addEventListener('input', e => { if (e.target.id === 'patientSearch') this.#scheduleSearch(); });
@@ -218,6 +354,9 @@ export class DashboardController {
      ================================================================ */
   #onStateChange(s, prev) {
     if (s.servicios !== prev.servicios) this.#view.renderServicios(s.servicios);
+    if (s.round !== prev.round) this.#view.renderRound(s.round);
+    if (s.density !== prev.density || s.highContrast !== prev.highContrast) this.#view.setUiPreferences(s);
+    if (s.newActivityCount !== prev.newActivityCount) this.#view.setNovedadesCount(s.newActivityCount);
 
     if (s.searchResults !== prev.searchResults) {
       if (s.searchResults === null) this.#view.hideSearchResults();
@@ -225,31 +364,44 @@ export class DashboardController {
     }
 
     const recordChanged = s.record !== prev.record;
+    const headerChanged = recordChanged || s.syncStatus !== prev.syncStatus || s.lastSyncedAt !== prev.lastSyncedAt || s.newActivityCount !== prev.newActivityCount;
     if (recordChanged) {
       if (s.record) {
         this.#view.showPatientView();
-        this.#view.renderHeader(s.record.patient);
+        const patient = { ...s.record.patient, __lastActivity: s.record.summary?.lastActivity ?? null };
+        this.#view.renderHeader(patient, { syncStatus: s.syncStatus, lastSyncedAt: s.lastSyncedAt, newActivityCount: s.newActivityCount });
         this.#view.setLabTypes(s.record.labTypes);
       } else {
         this.#charts.destroy();
         this.#view.showEmptyState();
       }
+    } else if (headerChanged && s.record) {
+      const patient = { ...s.record.patient, __lastActivity: s.record.summary?.lastActivity ?? null };
+      this.#view.renderHeader(patient, { syncStatus: s.syncStatus, lastSyncedAt: s.lastSyncedAt, newActivityCount: s.newActivityCount });
     }
 
-    if (recordChanged || s.currentSection !== prev.currentSection) {
+    if (recordChanged || s.currentSection !== prev.currentSection || s.timelineLoadedFor !== prev.timelineLoadedFor || (s.currentSection === 'timeline' && s.newActivityCount !== prev.newActivityCount)) {
       this.#view.highlightSection(s.currentSection);
       if (s.record) this.#renderSection();
     }
   }
 
   #renderSection() {
-    const { record, currentSection } = this.#state.get();
+    const { record, currentSection, timelineLoadedFor } = this.#state.get();
+    markPerformance('section-render-start');
+    if (currentSection === 'timeline' && timelineLoadedFor !== record.patient.HC) {
+      this.#charts.destroy();
+      this.#view.setSectionHtml('<div class="rounded-xl border border-hairline bg-white p-6 text-sm text-[#7C8784]" aria-busy="true">Cargando línea temporal…</div>');
+      void this.#loadTimeline(record.patient.HC);
+      return;
+    }
     const section = sectionViewFor(currentSection);
-    const ctx = { charts: this.#charts, today: todayISODate() };
+    const ctx = { charts: this.#charts, today: todayISODate(), pagination: record.pagination?.[currentSection] ?? null, timeline: record.timeline, newActivityCount: this.#state.get().newActivityCount, lastViewedAt: this.#state.get().lastViewedTimelineAt };
     this.#charts.destroy();
     try {
       this.#view.setSectionHtml(section.render(record, ctx));
       section.mount?.(this.#view.sectionContainer, record, ctx);
+      measurePerformance(`section-render-${currentSection}`, 'section-render-start');
     } catch (err) {
       console.error(err);
       this.#toast.show('No se pudo mostrar la sección: ' + err.message, 'error');
@@ -266,6 +418,7 @@ export class DashboardController {
 
   async #runSearch() {
     const { query, servicio } = this.#view.getSearchInput();
+    markPerformance('search-start');
     const seq = ++this.#searchSeq;
     if (!query && !servicio) {
       this.#state.set({ searchResults: null });
@@ -277,6 +430,7 @@ export class DashboardController {
       const results = await this.#api.searchPatients({ query, servicio });
       if (seq !== this.#searchSeq) return null;
       this.#state.set({ searchResults: results });
+      measurePerformance('search', 'search-start');
       this.#view.announceSearchStatus(
         results.length ? `${results.length} paciente${results.length === 1 ? '' : 's'} encontrado${results.length === 1 ? '' : 's'}.` : 'Sin resultados.'
       );
@@ -312,15 +466,21 @@ export class DashboardController {
      ================================================================ */
   async loadPatient(hc, { silent = false } = {}) {
     const seq = ++this.#loadSeq;
+    const perfStart = `patient-load-${seq}`;
+    markPerformance(perfStart);
     if (!silent) {
       // Nunca dejar visible el expediente de otro paciente mientras carga el nuevo.
-      this.#state.set({ record: null, currentHC: hc });
+      this.#state.set({ record: null, currentHC: hc, timelineLoadedFor: null, syncStatus: 'syncing', lastSyncedAt: null, newActivityCount: 0, lastViewedTimelineAt: getTimelineReadAt(this.#state.get().userId, hc) });
       this.#view.showPatientLoading();
     }
     try {
       const record = await this.#api.getPatientRecord(hc);
       if (seq !== this.#loadSeq) return;
-      this.#state.set({ record, currentHC: hc });
+      const lastViewedAt = getTimelineReadAt(this.#state.get().userId, hc);
+      const unread = record.summary?.lastActivity?.event_at && new Date(record.summary.lastActivity.event_at).getTime() > lastViewedAt ? 1 : 0;
+      this.#state.set({ record, currentHC: hc, timelineLoadedFor: null, lastViewedTimelineAt: lastViewedAt, newActivityCount: unread, syncStatus: 'syncing', lastSyncedAt: Date.now() });
+      if (lastViewedAt) void this.#refreshTimelineUnread(hc, lastViewedAt);
+      measurePerformance('patient-load', perfStart);
       if (!silent) this.#watchRealtime(hc);
     } catch (err) {
       if (seq !== this.#loadSeq) return;
@@ -335,13 +495,98 @@ export class DashboardController {
    */
   #watchRealtime(hc) {
     this.#stopRealtime();
-    this.#unsubscribeRealtime = this.#api.subscribeToPatient(hc, () => {
-      clearTimeout(this.#realtimeDebounce);
-      // Pequeño debounce: un solo guardado puede disparar varios eventos (INSERT + UPDATE de auditoría).
-      this.#realtimeDebounce = setTimeout(() => {
-        if (this.#state.get().currentHC === hc) this.loadPatient(hc, { silent: true });
-      }, 400);
-    });
+    this.#unsubscribeRealtime = this.#api.subscribeToPatient(
+      hc,
+      event => this.#handleRealtimeEvent(hc, event),
+      status => this.#handleRealtimeStatus(hc, status)
+    );
+  }
+
+  #handleRealtimeEvent(hc, event) {
+    if (this.#state.get().currentHC !== hc || !event?.table) return;
+    const current = this.#state.get().record;
+    if (!current) return;
+
+    const pageSize = Math.max(1, Number(current.pagination?.[listKeyForTable(event.table)]?.pageSize) || 25);
+    const next = current.withRealtimeEvent(event.table, event, pageSize);
+    if (next === null) {
+      this.#loadSeq++;
+      this.#stopRealtime();
+      this.#state.set({ record: null, currentHC: null, searchResults: null });
+      this.#view.setSearchText('');
+      this.#view.showEmptyState();
+      this.#toast.show('El expediente fue retirado o ya no está disponible.', 'warn');
+      return;
+    }
+    if (next !== current) {
+      const activityAt = event.commit_timestamp || event.new?.Modificado_En || event.old?.Modificado_En;
+      const lastViewed = this.#state.get().lastViewedTimelineAt;
+      const isNew = activityAt && new Date(activityAt).getTime() > Number(lastViewed || 0);
+      this.#state.set({ record: next, syncStatus: 'live', lastSyncedAt: Date.now(), newActivityCount: isNew ? this.#state.get().newActivityCount + 1 : this.#state.get().newActivityCount });
+    } else {
+      this.#state.set({ syncStatus: 'live', lastSyncedAt: Date.now() });
+    }
+
+    // Los cambios puntuales se aplican localmente; el resumen compacto solo se
+    // vuelve a calcular una vez por ráfaga, evitando siete consultas por evento.
+    // Si se elimina una fila visible, además resincronizamos esa página para
+    // rellenar el hueco con el siguiente registro, sin descargar el expediente.
+    clearTimeout(this.#realtimeDebounce);
+    this.#realtimeDebounce = setTimeout(async () => {
+      if (this.#state.get().currentHC !== hc) return;
+      try {
+        const listKey = listKeyForTable(event.table);
+        const latest = this.#state.get().record;
+        const meta = latest?.pagination?.[listKey];
+        if (event.eventType === 'DELETE' && listKey && meta && latest) {
+          const page = await this.#api.getPatientSectionPage(hc, listKey, meta.page, { pageSize: meta.pageSize });
+          const refreshed = this.#state.get().record;
+          if (refreshed && this.#state.get().currentHC === hc) {
+            this.#state.set({ record: refreshed.withListPage(listKey, page.items, page.pagination) });
+          }
+        }
+        const { data, error } = await this.#api.getPatientSummary(hc);
+        if (error) return;
+        const currentRecord = this.#state.get().record;
+        if (currentRecord && this.#state.get().currentHC === hc) this.#state.set({ record: currentRecord.withSummary(data) });
+      } catch (err) {
+        reportError(err, { origin: 'realtime-summary' });
+      }
+    }, 350);
+  }
+
+  async #syncAfterRealtimeReconnect(hc) {
+    if (this.#state.get().currentHC !== hc) return;
+    const { currentSection, record } = this.#state.get();
+    const meta = record?.pagination?.[currentSection];
+    try {
+      if (meta) {
+        const page = await this.#api.getPatientSectionPage(hc, currentSection, meta.page, { pageSize: meta.pageSize });
+        const latest = this.#state.get().record;
+        if (latest && this.#state.get().currentHC === hc) this.#state.set({ record: latest.withListPage(currentSection, page.items, page.pagination) });
+      }
+      await this.#refreshRecordSummary();
+    } catch (err) {
+      reportError(err, { origin: 'realtime-resync' });
+    }
+  }
+
+  #handleRealtimeStatus(hc, status) {
+    if (status === 'SUBSCRIBED') {
+      this.#toast.dismiss('realtime-offline');
+      this.#state.set({ syncStatus: 'live', lastSyncedAt: Date.now() });
+      // Al reconectar puede haber cambios ocurridos durante la desconexión.
+      // Sin reconstruir todo el expediente, resincronizamos solo la sección visible
+      // y el resumen compacto.
+      void this.#syncAfterRealtimeReconnect(hc);
+      return;
+    }
+    if (['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) {
+      this.#state.set({ syncStatus: 'offline' });
+      this.#toast.show('Actualización en tiempo real temporalmente desconectada. Se reintentará automáticamente.', 'warn', {
+        persistent: true, id: 'realtime-offline'
+      });
+    }
   }
 
   #stopRealtime() {
@@ -350,8 +595,128 @@ export class DashboardController {
     this.#unsubscribeRealtime = null;
   }
 
+  async #loadRound() {
+    if (!this.#state.get().authed) return;
+    this.#view.renderRoundLoading();
+    try {
+      const rows = await this.#api.getRoundOverview({ limit: 100 });
+      if (this.#state.get().authed) this.#state.set({ round: rows });
+    } catch (err) {
+      this.#toast.show('No se pudo cargar la ronda de hoy.', 'warn');
+      reportError(err, { origin: 'load-round' });
+    }
+  }
+
+  async #refreshTimelineUnread(hc, readAt) {
+    try {
+      const events = await this.#api.getPatientTimeline(hc, { limit: 80 });
+      if (this.#state.get().currentHC !== hc) return;
+      this.#state.set({ newActivityCount: countTimelineUnread(events, readAt) });
+    } catch (err) {
+      reportError(err, { origin: 'timeline-unread' });
+    }
+  }
+
+  async #loadTimeline(hc) {
+    const seq = ++this.#timelineSeq;
+    try {
+      const timeline = await this.#api.getPatientTimeline(hc, { limit: 50 });
+      if (seq !== this.#timelineSeq || this.#state.get().currentHC !== hc) return;
+      const record = this.#state.get().record;
+      if (!record) return;
+      this.#state.set({ record: record.withTimeline(timeline), timelineLoadedFor: hc });
+    } catch (err) {
+      if (seq !== this.#timelineSeq) return;
+      this.#toast.show('No se pudo cargar la línea temporal.', 'error');
+      reportError(err, { origin: 'load-timeline' });
+    }
+  }
+
+  #openNovedades() {
+    if (!this.#state.get().record) return;
+    this.switchSection('timeline');
+  }
+
+  #markTimelineRead() {
+    const { currentHC, userId, record } = this.#state.get();
+    if (!currentHC || !record) return;
+    const at = markTimelineRead(userId, currentHC);
+    this.#state.set({ lastViewedTimelineAt: at, newActivityCount: 0 });
+    this.#toast.show('Novedades marcadas como revisadas.');
+  }
+
+  #cycleDensity() {
+    const current = this.#state.get().density;
+    const next = current === 'compact' ? 'normal' : current === 'normal' ? 'comfortable' : 'compact';
+    writeUiPreferences({ density: next });
+    this.#state.set({ density: next });
+  }
+
+  #toggleHighContrast() {
+    const highContrast = !this.#state.get().highContrast;
+    writeUiPreferences({ highContrast });
+    this.#state.set({ highContrast });
+    this.#toast.show(highContrast ? 'Alto contraste activado.' : 'Alto contraste desactivado.');
+  }
+
+  goToRound() {
+    this.#loadSeq++;
+    this.#stopRealtime();
+    this.#state.set({ record: null, currentHC: null, currentSection: 'resumen', timelineLoadedFor: null, syncStatus: 'idle', lastSyncedAt: null });
+    this.#view.setSearchText('');
+    this.#state.set({ searchResults: null });
+    this.#view.showEmptyState();
+    void this.#loadRound();
+  }
+
+  #openCommandPalette() {
+    if (!this.#palette) return;
+    const { record, density, highContrast, newActivityCount } = this.#state.get();
+    const commands = [
+      { id: 'round', label: 'Ronda de hoy', hint: 'Volver a la lista de pacientes activos' },
+      { id: 'search', label: 'Buscar paciente', hint: 'Foco en el buscador', shortcut: '⌘/Ctrl K' },
+      ...SECTIONS.filter(s => s.id !== 'timeline').map(s => ({ id: `section:${s.id}`, label: `Ir a ${s.label}`, hint: 'Cambiar de sección', disabled: !record })),
+      { id: 'timeline', label: 'Línea temporal', hint: newActivityCount ? `${newActivityCount} novedades sin revisar` : 'Actividad clínica reciente', disabled: !record },
+      { id: 'density', label: `Cambiar densidad (actual: ${density})`, hint: 'Compacta · normal · cómoda' },
+      { id: 'contrast', label: highContrast ? 'Desactivar alto contraste' : 'Activar alto contraste', hint: 'Preferencia visual persistente' },
+      { id: 'print', label: 'Imprimir expediente', hint: 'Salida clínica confidencial', disabled: !record },
+      { id: 'lock', label: 'Bloquear sesión', hint: 'Cerrar la sesión local' }
+    ];
+    this.#palette.open(commands, id => {
+      if (id === 'round') this.goToRound();
+      else if (id === 'search') this.#view.focusSearch();
+      else if (id.startsWith('section:')) this.switchSection(id.slice(8));
+      else if (id === 'timeline') this.#openNovedades();
+      else if (id === 'density') this.#cycleDensity();
+      else if (id === 'contrast') this.#toggleHighContrast();
+      else if (id === 'print') this.#printRecord();
+      else if (id === 'lock') this.#signOut('Sesión bloqueada por solicitud del usuario.');
+    });
+  }
+
+  async #loadSectionPage(listKey, page) {
+    const { currentHC, record } = this.#state.get();
+    const meta = record?.pagination?.[listKey];
+    if (!currentHC || !record || !meta) return;
+    const target = Math.max(1, Math.min(Number(page) || 1, Number(meta.totalPages) || 1));
+    if (target === Number(meta.page)) return;
+    this.#view.setSectionBusy(true);
+    try {
+      const result = await this.#api.getPatientSectionPage(currentHC, listKey, target, { pageSize: meta.pageSize });
+      if (this.#state.get().currentHC !== currentHC) return;
+      const latest = this.#state.get().record;
+      if (latest) this.#state.set({ record: latest.withListPage(listKey, result.items, result.pagination) });
+    } catch (err) {
+      this.#toast.show('No se pudo cargar esta página: ' + this.#friendlyErrorMessage(err), 'error');
+      reportError(err, { action: 'page-section', listKey, page: target });
+    } finally {
+      this.#view.setSectionBusy(false);
+    }
+  }
+
   switchSection(id) {
-    if (SECTIONS.some(s => s.id === id)) this.#state.set({ currentSection: id });
+    if (!SECTIONS.some(s => s.id === id)) return;
+    this.#state.set({ currentSection: id, ...(id === 'timeline' ? { timelineLoadedFor: null } : {}) });
   }
 
   #reload() {
@@ -382,13 +747,35 @@ export class DashboardController {
     }
   }
 
-  async #submitRecord(form, modalId, build, save, message) {
+  async #submitRecord(form, listKey, modalId, build, save, message) {
     const hc = this.#state.get().currentHC;
     if (!hc) throw new Error('Selecciona un paciente primero.');
-    await save(build(this.#modals.readForm(form), hc));
+    const serverItem = await save(build(this.#modals.readForm(form), hc));
     this.#modals.close(modalId);
+    this.#applyInsertedItem(listKey, serverItem);
     this.#toast.show(message);
-    await this.#reload();
+    await this.#refreshRecordSummary();
+  }
+
+  #applyInsertedItem(listKey, item) {
+    const record = this.#state.get().record;
+    if (!record || !item) return;
+    const meta = record.pagination?.[listKey];
+    const pageSize = Math.max(1, Number(meta?.pageSize) || 25);
+    this.#state.set({ record: record.withUpsertedItem(listKey, item, { pageSize }) });
+  }
+
+  async #refreshRecordSummary() {
+    const hc = this.#state.get().currentHC;
+    if (!hc) return;
+    try {
+      const { data, error } = await this.#api.getPatientSummary(hc);
+      if (error) return;
+      const record = this.#state.get().record;
+      if (record && this.#state.get().currentHC === hc) this.#state.set({ record: record.withSummary(data) });
+    } catch (err) {
+      reportError(err, { origin: 'record-summary-refresh' });
+    }
   }
 
   /** Atajo de "agregar rápido" del checklist de pendientes: solo descripción, programado para hoy. */
@@ -397,9 +784,10 @@ export class DashboardController {
     if (!hc) throw new Error('Selecciona un paciente primero.');
     const descripcion = String(new FormData(form).get('Descripcion_Tarea') ?? '').trim();
     if (!descripcion) return;
-    await this.#api.addTask(PendingTask.fromForm({ Descripcion_Tarea: descripcion }, hc));
+    const serverItem = await this.#api.addTask(PendingTask.fromForm({ Descripcion_Tarea: descripcion }, hc));
     form.reset();
-    await this.#reload();
+    this.#applyInsertedItem('tasks', serverItem);
+    await this.#refreshRecordSummary();
   }
 
   /** Marca un pendiente como realizado (optimista) y ofrece deshacerlo desde el toast (patrón tipo Gmail). */
@@ -410,7 +798,9 @@ export class DashboardController {
     const expected = this.#findItem('tasks', id)?.Modificado_En;
     this.#state.set({ record: record.withPatchedItem('tasks', id, { Estado: 'Realizado', Fecha_Completado: new Date().toISOString() }) });
     try {
-      await this.#api.completeTask(id, expected);
+      const serverItem = await this.#api.completeTask(id, expected);
+      const latest = this.#state.get().record;
+      if (latest && serverItem) this.#state.set({ record: latest.withPatchedItem('tasks', id, serverItem) });
       this.#toast.show('Pendiente marcado como realizado', 'ok', {
         action: {
           label: 'Deshacer',
@@ -432,8 +822,9 @@ export class DashboardController {
   }
 
   async #submitSimple(form, modalId, message, save) {
+    let serverItem;
     try {
-      await save(this.#modals.readForm(form));
+      serverItem = await save(this.#modals.readForm(form));
     } catch (err) {
       if (err instanceof ConflictError) {
         // No se cierra el modal ni se pierde lo escrito: la persona ve el error,
@@ -443,8 +834,10 @@ export class DashboardController {
       throw err;
     }
     this.#modals.close(modalId);
+    if (modalId === 'modal-responder') this.#applyInsertedItem('consultations', serverItem);
+    if (modalId === 'modal-resultado-cultivo') this.#applyInsertedItem('cultures', serverItem);
     this.#toast.show(message);
-    await this.#reload();
+    await this.#refreshRecordSummary();
   }
 
   /**
@@ -477,7 +870,9 @@ export class DashboardController {
     const expected = this.#findItem(listKey, id)?.Modificado_En;
     this.#state.set({ record: record.withPatchedItem(listKey, id, patch) });
     try {
-      await apiCall(expected);
+      const serverItem = await apiCall(expected);
+      const latest = this.#state.get().record;
+      if (latest && serverItem) this.#state.set({ record: latest.withPatchedItem(listKey, id, serverItem) });
       this.#toast.show(message);
     } catch (err) {
       // Revierte al estado anterior: la persona ve exactamente lo que había antes del intento.

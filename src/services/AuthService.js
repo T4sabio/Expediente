@@ -41,7 +41,7 @@ export class AuthService {
   }
 
   async signOut() {
-    const { error } = await this.#db.auth.signOut();
+    const { error } = await this.#db.auth.signOut({ scope: 'local' });
     if (error) throw new ApiError(error.message, error);
   }
 
@@ -52,8 +52,9 @@ export class AuthService {
    * se rompe la UI — las políticas RLS son las que de verdad deciden qué puede hacer.
    */
   async getMyProfile() {
-    const { data, error } = await this.#db.from('personal').select('nombre, rol, activo').single();
-    if (error) return { nombre: null, rol: 'lectura', activo: true, pendiente: true };
+    const { data, error } = await this.#db.from('personal').select('nombre, rol, activo').maybeSingle();
+    if (error) throw new ApiError('No se pudo verificar el perfil de acceso.', error);
+    if (!data) return { nombre: null, rol: 'lectura', activo: true, pendiente: true };
     return { ...data, pendiente: false };
   }
 

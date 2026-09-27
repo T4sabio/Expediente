@@ -17,7 +17,14 @@ export const resumenSection = {
   id: 'resumen',
 
   render(record, { today }) {
+    const summary = record.summary ?? {};
+    const counts = summary.counts ?? {};
     const last = record.latestVitals;
+
+    const meds = summary.activeMedications?.length ? summary.activeMedications : record.activeMedications;
+    const tasks = summary.openTasks?.length ? summary.openTasks : record.openTasks;
+    const cultures = summary.pendingCultures?.length ? summary.pendingCultures : record.pendingCultures;
+    const consults = summary.unansweredConsultations?.length ? summary.unansweredConsultations : record.unansweredConsultations;
 
     const vitalCards = last
       ? Object.keys(VITAL_RANGES).map(key => {
@@ -29,15 +36,11 @@ export const resumenSection = {
         }).join('')
       : '<p class="text-sm text-[#5C6B67]">Sin registros de signos vitales.</p>';
 
-    const meds = record.activeMedications;
-    const tasks = record.openTasks;
-    const cultures = record.pendingCultures;
-    const consults = record.unansweredConsultations;
     // Antibióticos con seguimiento de días de cobertura, el que lleva más días primero
     // (es el que más urge revisar/suspender o ajustar).
     const tracked = meds.filter(m => m.isTracked)
       .sort((a, b) => b.treatmentDays(today) - a.treatmentDays(today));
-    const periodicLines = periodicCultureLines(record.cultures, today);
+    const periodicLines = periodicCultureLines(cultures, today);
 
     return `
       <div class="flex items-center justify-between mb-3">
@@ -46,12 +49,12 @@ export const resumenSection = {
       </div>
       <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 mb-6">${vitalCards}</div>
       <div class="grid md:grid-cols-3 gap-4">
-        ${summaryPanel('Medicamentos activos', meds.length, meds.map(m => `${m.Nombre_Medicamento} ·${m.treatmentDays(today)}d`), 'medicamentos')}
-        ${summaryPanel('Pendientes abiertos', tasks.length, tasks.map(t => t.Descripcion_Tarea), 'pendientes')}
-        ${summaryPanel('Cultivos en curso', cultures.length, [...periodicLines, ...cultures.map(c => `${c.Tipo_Cultivo} · enviado ${fmtDate(c.Fecha_Envio)}`)], 'cultivos')}
-        ${summaryPanel('Interconsultas sin respuesta', consults.length, consults.map(c => c.Departamento_Consultado), 'consultas')}
-        ${summaryPanel('Laboratorios registrados', record.labs.length, record.labTypes, 'laboratorios')}
-        ${summaryPanel('Signos vitales registrados', record.vitals.length, [], 'vitales')}
+        ${summaryPanel('Medicamentos activos', Number(counts.activeMedications ?? meds.length), meds.map(m => `${m.Nombre_Medicamento} ·${m.treatmentDays(today)}d`), 'medicamentos')}
+        ${summaryPanel('Pendientes abiertos', Number(counts.openTasks ?? tasks.length), tasks.map(t => t.Descripcion_Tarea), 'pendientes')}
+        ${summaryPanel('Cultivos en curso', Number(counts.pendingCultures ?? cultures.length), [...periodicLines, ...cultures.map(c => `${c.Tipo_Cultivo} · enviado ${fmtDate(c.Fecha_Envio)}`)], 'cultivos')}
+        ${summaryPanel('Interconsultas sin respuesta', Number(counts.unansweredConsultations ?? consults.length), consults.map(c => c.Departamento_Consultado), 'consultas')}
+        ${summaryPanel('Laboratorios registrados', Number(counts.labs ?? record.labs.length), record.labTypes, 'laboratorios')}
+        ${summaryPanel('Signos vitales registrados', Number(counts.vitals ?? record.vitals.length), [], 'vitales')}
       </div>
       ${tracked.length ? `
       <div class="mt-4 rounded-lg border border-[#B8863A]/30 bg-[#FBF4E8] p-4">

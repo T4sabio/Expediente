@@ -1,75 +1,111 @@
 /**
- * Monitoreo de errores en producción (hallazgo 2.4 de la auditoría).
- *
- * Antes de esto, cualquier error que no llegara a un `try/catch` visible solo
- * terminaba en `console.error` — invisible en cuanto la app está desplegada en
- * un hospital. Este módulo es una capa muy delgada:
- *   - Si existe `VITE_SENTRY_DSN`, inicializa Sentry (import dinámico: si el
- *     paquete no está instalado o la red bloquea el CDN, la app sigue
- *     funcionando igual, solo sin monitoreo).
- *   - Si no existe, `reportError` simplemente hace `console.error` — cero
- *     comportamiento nuevo, cero dependencias obligatorias.
- *
- * REGLA DURA: nunca se envía nada que pueda identificar a un paciente (HC,
- * nombre, diagnóstico, etc.) a un servicio externo. `context` es para
- * metadatos técnicos (qué acción, qué sección, qué formulario), nunca datos
- * clínicos. `scrub()` es la última barrera por si alguien pasa algo de más.
+ * Telemetría de errores sin PHI. La regla es deny-by-default: solo se envían
+ * metadatos técnicos explícitamente permitidos y una excepción sanitizada.
  */
 
-const PATIENT_FIELD_NAMES = new Set([
-  'hc', 'nombre_completo', 'diagnosticos', 'motivo_consulta',
-  'servicio', 'cama', 'edad', 'num_rayosx', 'observaciones_microbiologia',
-  'descripcion_tarea', 'justificacion_observaciones', 'respuesta_departamento'
+const ALLOWED_CONTEXT_KEYS = new Set([
+  'origin', 'action', 'section', 'formId', 'operation', 'component', 'errorCode'
 ]);
 
-let sentryClient = null;
-let initAttempted = false;
+const SAFE_ERROR_NAMES = new Set([
+  'Error', 'TypeError', 'ReferenceError', 'SyntaxError', 'RangeError',
+  'ApiError', 'ConflictError', 'ValidationError', 'InactiveUserError'
+]);
 
-/** Quita de `context` cualquier clave que luzca como dato clínico antes de reportar. */
-function scrub(context = {}) {
+const HC_PATTERN = /\b(?:hc\s*[:=#-]?\s*)?[A-Z0-9]{2,12}(?:[-/][A-Z0-9]{1,12}){1,3}\b/gi;
+const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
+
+function sanitizeText(value) {
+  return String(value ?? '')
+    .replace(EMAIL_PATTERN, '[email]')
+    .replace(UUID_PATTERN, '[id]')
+    .replace(HC_PATTERN, '[hc]')
+    .slice(0, 240);
+}
+
+const CONTEXT_IDENTIFIER_KEYS = new Set([
+  'origin', 'action', 'section', 'formId', 'operation', 'component', 'errorCode'
+]);
+
+function sanitizeContextValue(key, value) {
+  const raw = String(value ?? '').slice(0, 120);
+  // Los valores de contexto son códigos técnicos, no texto clínico. Para evitar
+  // falsos positivos (p. ej. `form-med`), no aplicamos aquí el detector de HC;
+  // el contenido de excepciones se reemplaza por completo en `safeError`.
+  if (CONTEXT_IDENTIFIER_KEYS.has(key)) return raw.replace(/[^a-zA-Z0-9._:/-]/g, '_');
+  return sanitizeText(raw);
+}
+
+export function scrubContext(context = {}) {
   const clean = {};
   for (const [key, value] of Object.entries(context)) {
-    if (PATIENT_FIELD_NAMES.has(key.toLowerCase())) continue;
-    clean[key] = typeof value === 'object' && value !== null ? '[objeto omitido]' : value;
+    if (!ALLOWED_CONTEXT_KEYS.has(key)) continue;
+    if (value == null) continue;
+    clean[key] = sanitizeContextValue(key, value);
   }
   return clean;
 }
 
-/**
- * Se llama una vez al arrancar la app (ver main.js). No lanza si falla: el
- * monitoreo es un extra, nunca debe impedir que la app cargue.
- */
+function safeError(err) {
+  const name = SAFE_ERROR_NAMES.has(err?.name) ? err.name : 'Error';
+  const code = sanitizeText(err?.code ?? 'UNCLASSIFIED');
+  const clean = new Error(`Client exception [${code}]`);
+  clean.name = name;
+  return clean;
+}
+
+let sentryClient = null;
+let initAttempted = false;
+
 export async function initErrorReporting(env = import.meta.env) {
   if (initAttempted) return;
   initAttempted = true;
   const dsn = env.VITE_SENTRY_DSN;
-  if (!dsn) return; // sin DSN configurado: se reporta solo a la consola, y está bien.
+  if (!dsn) return;
   try {
     const Sentry = await import('@sentry/browser');
     Sentry.init({
       dsn,
       environment: env.MODE ?? 'production',
       tracesSampleRate: 0,
-      // Última red de seguridad: si algún evento trae texto libre que
-      // pareciera un nombre/expediente, se descarta el evento entero antes de
-      // salir del navegador.
+      sendDefaultPii: false,
+      beforeBreadcrumb() { return null; },
       beforeSend(event) {
-        const asText = JSON.stringify(event).toLowerCase();
-        if (PATIENT_FIELD_NAMES.has('hc') && /"hc"\s*:/.test(asText)) return null;
+        // Strip every high-risk surface before the SDK serializes/sends it.
+        delete event.request;
+        delete event.user;
+        delete event.breadcrumbs;
+        delete event.contexts?.trace;
+        if (event.message) event.message = 'Client exception';
+        if (event.exception?.values) {
+          event.exception.values = event.exception.values.map(item => ({
+            type: SAFE_ERROR_NAMES.has(item.type) ? item.type : 'Error',
+            value: 'Client exception'
+          }));
+        }
+        event.extra = scrubContext(event.extra ?? {});
+        event.tags = scrubContext(event.tags ?? {});
         return event;
       }
     });
     sentryClient = Sentry;
   } catch (err) {
-    console.warn('[errorReporter] No se pudo inicializar el monitoreo de errores:', err.message);
+    console.warn('[errorReporter] No se pudo inicializar el monitoreo de errores:', sanitizeText(err?.message));
   }
 }
 
-/** @param {Error} err @param {Record<string, unknown>} [context] Metadatos técnicos, nunca datos de pacientes. */
 export function reportError(err, context = {}) {
-  const clean = scrub(context);
-  console.error(err, clean);
+  const cleanContext = scrubContext(context);
+  const safe = safeError(err);
+  if (import.meta.env?.DEV) {
+    console.error('[app-error]', err, cleanContext);
+  } else {
+    console.error('[app-error]', safe, cleanContext);
+  }
   if (sentryClient) {
-    sentryClient.captureException(err, { extra: clean });
+    sentryClient.captureException(safe, { extra: cleanContext });
   }
 }
+
+export const __testing = Object.freeze({ sanitizeText, safeError });

@@ -42,3 +42,13 @@ export function isNetworkError(err) {
   const msg = String(err?.message ?? '').toLowerCase();
   return err instanceof TypeError || /failed to fetch|network ?error|load failed|ecconnrefused/.test(msg);
 }
+
+
+/** Perfil válido pero deshabilitado por administración. */
+export class InactiveUserError extends ApiError {
+  constructor(message = 'Tu acceso está inactivo. Contacta al administrador del sistema.') {
+    super(message);
+    this.name = 'InactiveUserError';
+    this.code = 'USER_INACTIVE';
+  }
+}

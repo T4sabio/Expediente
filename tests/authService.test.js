@@ -3,18 +3,23 @@ import assert from 'node:assert/strict';
 import { AuthService } from '../src/services/AuthService.js';
 import { ApiError } from '../src/utils/errors.js';
 
-function makeAuthClient({ signInError, session = null, profile } = {}) {
+function makeAuthClient({ signInError, session = null, profile, signOutError = null } = {}) {
+  const signOutCalls = [];
   return {
     auth: {
       getSession: async () => ({ data: { session }, error: null }),
       signInWithPassword: async () => signInError
         ? { data: null, error: signInError }
         : { data: { session: { user: { id: 'u1' } } }, error: null },
-      signOut: async () => ({ error: null }),
+      signOut: async (options) => {
+        signOutCalls.push(options);
+        return { error: signOutError };
+      },
       onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } })
     },
+    _test: { signOutCalls },
     from: () => ({
-      select: () => ({ single: async () => profile ?? { data: null, error: { code: '42501', message: 'no row' } } })
+      select: () => ({ maybeSingle: async () => profile ?? { data: null, error: null } })
     })
   };
 }
@@ -40,9 +45,22 @@ test('getMyProfile: si la fila de "personal" todavía no existe (RLS/trigger no 
   assert.equal(profile.pendiente, true);
 });
 
+test('getMyProfile: un error de base no se transforma en acceso pendiente', async () => {
+  const auth = new AuthService(makeAuthClient({ profile: { data: null, error: { code: 'PGRST500', message: 'database down' } } }));
+  await assert.rejects(() => auth.getMyProfile(), err => err instanceof ApiError && err.code === 'PGRST500');
+});
+
 test('getMyProfile: con fila existente, devuelve el rol real', async () => {
   const auth = new AuthService(makeAuthClient({ profile: { data: { nombre: 'Dra. Ruiz', rol: 'medico', activo: true }, error: null } }));
   const profile = await auth.getMyProfile();
   assert.equal(profile.rol, 'medico');
   assert.equal(profile.pendiente, false);
+});
+
+
+test('signOut: solicita alcance local para no cerrar otras sesiones', async () => {
+  const client = makeAuthClient();
+  const auth = new AuthService(client);
+  await auth.signOut();
+  assert.deepEqual(client._test.signOutCalls, [{ scope: 'local' }]);
 });

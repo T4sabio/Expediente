@@ -1,5 +1,6 @@
-import { escapeHtml as esc, fmtDate, orDash } from '../utils/formatters.js';
+import { escapeHtml as esc, fmtDate, fmtDateTime, fmtRelative, orDash } from '../utils/formatters.js';
 import { icon } from './icons.js';
+import { renderRoundOverview } from './roundView.js';
 
 const EDIT_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 20h9" stroke="#5C6B67" stroke-width="1.8" stroke-linecap="round"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" stroke="#5C6B67" stroke-width="1.8" stroke-linejoin="round"/></svg>';
 
@@ -16,7 +17,7 @@ export class DashboardView {
       servicio: $('servicioFilter'), sideRail: $('sideRail'), mobileRail: $('mobileRail'),
       empty: $('emptyState'), patientView: $('patientView'), header: $('patientHeader'),
       section: $('sectionContainer'), labTypes: $('tipoLabList'),
-      searchSpinner: $('searchSpinner'), searchStatus: $('searchStatus'),
+      searchSpinner: $('searchSpinner'), searchStatus: $('searchStatus'), round: $('roundContainer'),
       login: $('loginScreen'), loginError: $('loginError'), loginSubtitle: $('loginSubtitle'),
       loginNombreLabel: $('loginNombreLabel'), toggleSignupBtn: $('toggleSignupBtn'),
       userBadge: $('userBadge'), userNombre: $('userNombre'), userRol: $('userRol')
@@ -55,6 +56,7 @@ export class DashboardView {
   hideUser() {
     this.#el.userBadge.classList.add('hidden');
     this.#el.userBadge.classList.remove('flex');
+    this.#doc.body.classList.remove('role-lectura');
   }
 
   /* ---- carga ---- */
@@ -68,6 +70,7 @@ export class DashboardView {
     return { query: this.#el.search.value.trim(), servicio: this.#el.servicio.value };
   }
   setSearchText(text) { this.#el.search.value = text; }
+  focusSearch() { this.#el.search.focus(); this.#el.search.select?.(); }
 
   renderServicios(servicios) {
     this.#el.servicio.innerHTML = '<option value="">Todos los servicios</option>' +
@@ -77,7 +80,7 @@ export class DashboardView {
   renderSearchResults(patients) {
     const box = this.#el.results;
     box.innerHTML = patients.length ? patients.map(p => `
-      <button type="button" data-action="select-patient" data-hc="${esc(p.HC)}"
+      <button type="button" role="option" aria-selected="false" data-action="select-patient" data-hc="${esc(p.HC)}"
         class="w-full text-left px-3 py-2.5 hover:bg-accent-soft border-b border-hairline last:border-b-0 flex items-center justify-between gap-2">
         <span class="min-w-0">
           <span class="block text-sm font-medium truncate">${esc(p.Nombre_Completo)}</span>
@@ -87,11 +90,13 @@ export class DashboardView {
       </button>`).join('')
       : '<div class="px-3 py-4 text-sm text-[#9AA6A2] text-center">Sin resultados.</div>';
     box.classList.remove('hidden');
+    this.#el.search.setAttribute('aria-expanded', 'true');
   }
 
   hideSearchResults() {
     this.#el.results.classList.add('hidden');
     this.#el.results.innerHTML = '';
+    this.#el.search.setAttribute('aria-expanded', 'false');
   }
 
   showSearchSpinner() { this.#el.searchSpinner.classList.remove('hidden'); }
@@ -118,6 +123,31 @@ export class DashboardView {
   highlightSection(id) {
     this.#doc.querySelectorAll('.rail-btn, .rail-btn-m')
       .forEach(b => b.classList.toggle('active', b.dataset.section === id));
+  }
+
+  renderRound(rows, options = {}) {
+    if (!this.#el.round) return;
+    this.#el.round.innerHTML = renderRoundOverview(rows, options);
+  }
+
+  renderRoundLoading() {
+    if (!this.#el.round) return;
+    this.#el.round.innerHTML = `<div class="rounded-xl border border-hairline bg-white p-5 animate-pulse"><div class="h-4 w-40 rounded bg-[#EEF2F1]"></div><div class="mt-3 h-3 w-72 rounded bg-[#EEF2F1]"></div><div class="mt-5 h-48 rounded-lg bg-[#EEF2F1]"></div></div>`;
+  }
+
+  setUiPreferences({ density = 'normal', highContrast = false } = {}) {
+    const body = this.#doc.body;
+    body.classList.remove('density-compact', 'density-normal', 'density-comfortable');
+    body.classList.add(`density-${density}`);
+    body.classList.toggle('contrast-high', Boolean(highContrast));
+  }
+
+  setNovedadesCount(count) {
+    const el = this.#doc.getElementById('newActivityCount');
+    if (!el) return;
+    const value = Math.max(0, Number(count) || 0);
+    el.textContent = value > 99 ? '99+' : String(value);
+    el.classList.toggle('hidden', value === 0);
   }
 
   /* ---- paciente ---- */
@@ -170,7 +200,10 @@ export class DashboardView {
       </div>`;
   }
 
-  renderHeader(g) {
+  renderHeader(g, { syncStatus = 'syncing', lastSyncedAt = null, newActivityCount = 0 } = {}) {
+    const activity = g?.__lastActivity ?? null;
+    const syncMap = { live: ['En vivo', 'ok'], syncing: ['Sincronizando', 'accent'], offline: ['Sin conexión', 'warn'] };
+    const [syncLabel, syncTone] = syncMap[syncStatus] ?? syncMap.syncing;
     this.#el.header.innerHTML = `
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div class="min-w-[240px]">
@@ -180,6 +213,12 @@ export class DashboardView {
             <button data-action="editar-paciente" title="Editar paciente" class="p-1.5 rounded-md hover:bg-[#EEF2F1] transition">${EDIT_ICON}</button>
           </div>
           <p class="text-sm text-[#5C6B67] mt-1 max-w-xl">${esc(orDash(g.Motivo_Consulta))}</p>
+          <div class="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+            <button type="button" data-action="open-novedades" class="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-white px-2.5 py-1 font-medium text-[#3C4A46] hover:border-accent focus:outline-none focus:ring-2 focus:ring-accent">Novedades <span id="newActivityCount" class="${newActivityCount ? '' : 'hidden'} rounded-full bg-critical px-1.5 py-0.5 text-[10px] text-white">${newActivityCount > 99 ? '99+' : newActivityCount}</span></button>
+            <span class="inline-flex items-center gap-1.5 rounded-full ${syncTone === 'ok' ? 'bg-ok-soft text-ok' : syncTone === 'warn' ? 'bg-warn-soft text-warn' : 'bg-accent-soft text-ink'} px-2.5 py-1"><span class="h-1.5 w-1.5 rounded-full ${syncStatus === 'live' ? 'bg-ok' : syncStatus === 'offline' ? 'bg-warn' : 'bg-accent'}" aria-hidden="true"></span>${syncLabel}</span>
+            ${activity?.actor_name ? `<span class="text-[#7C8784]">Actualizado por ${esc(activity.actor_name)}${activity.event_at ? ` · ${esc(fmtDateTime(activity.event_at))}` : ''}</span>` : ''}
+            ${lastSyncedAt ? `<span class="text-[#9AA6A2]">Sincronizado ${esc(fmtRelative(lastSyncedAt))}</span>` : ''}
+          </div>
         </div>
         <div class="flex flex-wrap gap-2">
           <span class="px-3 py-1.5 rounded-md bg-accent-soft text-ink text-xs font-medium">${esc(orDash(g.Servicio))}</span>
@@ -194,6 +233,11 @@ export class DashboardView {
   get sectionContainer() { return this.#el.section; }
 
   setSectionHtml(html) { this.#el.section.innerHTML = html; }
+
+  setSectionBusy(busy) {
+    this.#el.section.setAttribute('aria-busy', busy ? 'true' : 'false');
+    this.#el.section.classList.toggle('opacity-60', busy);
+  }
 
   setLabTypes(types) {
     this.#el.labTypes.innerHTML = types.map(t => `<option value="${esc(t)}">`).join('');

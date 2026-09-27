@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { validateSupabaseUrl, rejectPrivilegedJwt } from '../utils/configSecurity.js';
 
 /**
  * Crea el cliente de Supabase a partir de variables de entorno de Vite (.env.local).
@@ -7,10 +8,18 @@ import { createClient } from '@supabase/supabase-js';
  * (ver supabase/001_search_and_indexes.sql). Nunca pongas aquí la service_role key.
  */
 export function createSupabaseClient(env = import.meta.env) {
-  const url = env.VITE_SUPABASE_URL;
+  const rawUrl = env.VITE_SUPABASE_URL;
   const key = env.VITE_SUPABASE_ANON_KEY;
-  if (!url || !key) {
+  if (!rawUrl || !key) {
     throw new Error('Faltan VITE_SUPABASE_URL y/o VITE_SUPABASE_ANON_KEY. Copia .env.example a .env.local y complétalo.');
   }
-  return createClient(url, key);
+  const url = validateSupabaseUrl(rawUrl, env.MODE);
+  rejectPrivilegedJwt(key);
+  return createClient(url, key, {
+    auth: {
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: false
+    }
+  });
 }

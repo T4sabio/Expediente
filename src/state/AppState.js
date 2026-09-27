@@ -30,12 +30,21 @@ export class AppState {
   }
 }
 
-export const createInitialState = () => ({
+export const createInitialState = (ui = {}) => ({
   authed: false,
   record: null,          // PatientRecord del paciente abierto
   currentHC: null,
   currentSection: 'resumen',
   searchResults: null,   // null = panel de resultados oculto
   servicios: [],
-  lastAgeUnit: 'años'
+  lastAgeUnit: 'años',
+  round: [],
+  timelineLoadedFor: null,
+  syncStatus: 'idle',
+  lastSyncedAt: null,
+  newActivityCount: 0,
+  lastViewedTimelineAt: 0,
+  userId: null,
+  density: ui.density ?? 'normal',
+  highContrast: Boolean(ui.highContrast)
 });

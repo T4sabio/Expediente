@@ -8,44 +8,41 @@ import { DashboardView } from './views/DashboardView.js';
 import { ModalManager } from './views/ModalManager.js';
 import { Toast } from './views/Toast.js';
 import { ChartManager } from './views/ChartManager.js';
+import { CommandPalette } from './views/CommandPalette.js';
 import { enhanceFormValidation } from './views/formValidation.js';
 import { initErrorReporting, reportError } from './utils/errorReporter.js';
+import { markPerformance, measurePerformance } from './utils/performance.js';
 
-// Monitoreo de errores (2.4): si VITE_SENTRY_DSN no está configurado, esto no
-// hace nada más que dejar `reportError` funcionando como console.error.
-initErrorReporting();
-
-// Cualquier excepción o promesa rechazada que se escape de un try/catch
-// específico igual queda registrada, en vez de perderse en silencio.
 window.addEventListener('error', e => reportError(e.error ?? new Error(e.message), { origin: 'window.onerror' }));
-window.addEventListener('unhandledrejection', e => reportError(e.reason instanceof Error ? e.reason : new Error(String(e.reason)), { origin: 'unhandledrejection' }));
+window.addEventListener('unhandledrejection', e => reportError(
+  e.reason instanceof Error ? e.reason : new Error('Unhandled promise rejection'),
+  { origin: 'unhandledrejection' }
+));
 
-enhanceFormValidation(document);
-const view = new DashboardView(document);
-const toast = new Toast(document.getElementById('toast'));
+async function bootstrap() {
+  markPerformance('boot-start');
+  await initErrorReporting();
+  enhanceFormValidation(document);
 
-// Estado de conexión (2.3): aviso persistente mientras no hay red; no bloquea
-// la interfaz, solo dejar claro por qué algo podría no guardarse.
-function updateConnectionBanner() {
-  if (navigator.onLine === false) {
-    toast.show('Sin conexión a internet. Podés seguir viendo lo ya cargado, pero nada nuevo se guardará hasta reconectar.', 'warn', { persistent: true, id: 'offline' });
-  } else {
-    toast.dismiss('offline');
+  const view = new DashboardView(document);
+  const toast = new Toast(document.getElementById('toast'));
+
+  function updateConnectionBanner() {
+    if (navigator.onLine === false) {
+      toast.show('Sin conexión. Lo nuevo no se guardará hasta reconectar.', 'warn', { persistent: true, id: 'offline' });
+    } else {
+      toast.dismiss('offline');
+    }
   }
-}
-window.addEventListener('online', updateConnectionBanner);
-window.addEventListener('offline', updateConnectionBanner);
-updateConnectionBanner();
+  window.addEventListener('online', updateConnectionBanner);
+  window.addEventListener('offline', updateConnectionBanner);
+  updateConnectionBanner();
 
-try {
   const client = createSupabaseClient();
   const controller = new DashboardController({
     api: new ApiService(client, {
-      // 2.6: si la función de búsqueda tolerante a acentos/tipeo no está
-      // desplegada, que se note en la interfaz (persistente) y no solo en la
-      // consola — es una degradación funcional, no un detalle de rendimiento.
       onDegraded: name => toast.show(
-        `La búsqueda de pacientes está en modo básico (sensible a acentos) porque falta desplegar "${name}". Pide a un administrador que ejecute supabase/001_search_and_indexes.sql.`,
+        `La búsqueda está en modo básico porque falta desplegar \"${name}\".`,
         'warn', { persistent: true, id: 'rpc-' + name }
       )
     }),
@@ -54,10 +51,16 @@ try {
     view,
     modals: new ModalManager(document),
     toast,
-    charts: new ChartManager()
+    charts: new ChartManager(),
+    palette: new CommandPalette(document)
   });
-  controller.init();
-} catch (err) {
-  reportError(err, { origin: 'bootstrap' });
-  view.showFatalError(err.message);
+
+  await controller.init();
+  measurePerformance('boot', 'boot-start');
 }
+
+void bootstrap().catch(err => {
+  reportError(err, { origin: 'bootstrap' });
+  const loading = document.getElementById('loadingScreen');
+  if (loading) loading.innerHTML = '<p class="max-w-md text-center text-sm px-6">No se pudo iniciar la aplicación. Verifica la configuración y la conexión.</p>';
+});

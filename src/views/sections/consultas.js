@@ -1,10 +1,10 @@
 import { escapeHtml as esc, fmtDate, orDash } from '../../utils/formatters.js';
-import { sectionHeader, tableWrap, emptyRow, badge } from '../components.js';
+import { sectionHeader, tableWrap, emptyRow, badge, paginationControls } from '../components.js';
 
 export const consultasSection = {
   id: 'consultas',
 
-  render(record) {
+  render(record, { pagination } = {}) {
     const rows = record.consultations.length
       ? record.consultations.map(c => `
         <tr>
@@ -19,6 +19,7 @@ export const consultasSection = {
       : emptyRow(5);
 
     return `${sectionHeader('Interconsultas', 'modal-consulta')}
-      ${tableWrap(rows, ['Departamento', 'Enviada', 'Estado', 'Respuesta', ''])}`;
+      ${tableWrap(rows, ['Departamento', 'Enviada', 'Estado', 'Respuesta', ''])}
+      ${paginationControls(pagination, 'interconsultas')}`;
   }
 };

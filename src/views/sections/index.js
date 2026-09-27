@@ -5,6 +5,7 @@ import { laboratoriosSection } from './laboratorios.js';
 import { consultasSection } from './consultas.js';
 import { cultivosSection } from './cultivos.js';
 import { pendientesSection } from './pendientes.js';
+import { timelineSection } from './timeline.js';
 
 /**
  * Registro de secciones. Contrato de cada una:
@@ -14,7 +15,7 @@ import { pendientesSection } from './pendientes.js';
  */
 const REGISTRY = Object.fromEntries(
   [resumenSection, vitalesSection, medicamentosSection, laboratoriosSection,
-   consultasSection, cultivosSection, pendientesSection].map(s => [s.id, s])
+   consultasSection, cultivosSection, pendientesSection, timelineSection].map(s => [s.id, s])
 );
 
 export const sectionViewFor = id => REGISTRY[id] ?? resumenSection;

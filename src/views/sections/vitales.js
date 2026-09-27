@@ -1,6 +1,6 @@
 import { VITAL_LABELS } from '../../utils/constants.js';
 import { fmtDateTime } from '../../utils/formatters.js';
-import { sectionHeader, tableWrap, emptyRow, cellFlag, abnormalMark } from '../components.js';
+import { sectionHeader, tableWrap, emptyRow, cellFlag, abnormalMark, paginationControls } from '../components.js';
 
 const OPTIONS = [
   { key: 'PA', label: 'Presión arterial (sistólica / diastólica)' },
@@ -62,7 +62,7 @@ function drawChart(charts, vitals, metric) {
 export const vitalesSection = {
   id: 'vitales',
 
-  render(record) {
+  render(record, { pagination } = {}) {
     return `
       ${sectionHeader('Signos vitales', 'modal-vital')}
       <div class="bg-white rounded-lg border border-hairline p-4 mb-4">
@@ -74,7 +74,8 @@ export const vitalesSection = {
         <div class="chart-wrap mt-3"><canvas id="vitalChart" role="img" aria-label="Gráfico de tendencia de signos vitales; ver tabla equivalente debajo"></canvas></div>
         <div id="vitalChartTextAlt"></div>
       </div>
-      ${tableWrap(tableRows(record.vitals))}`;
+      ${tableWrap(tableRows(record.vitals))}
+      ${paginationControls(pagination, 'signos vitales')}`;
   },
 
   mount(root, record, { charts }) {

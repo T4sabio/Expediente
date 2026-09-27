@@ -1,11 +1,11 @@
 import { escapeHtml as esc, fmtDate, fmtRelativeCalendarDate, orDash } from '../../utils/formatters.js';
-import { sectionHeader, tableWrap, emptyRow, badge } from '../components.js';
+import { sectionHeader, tableWrap, emptyRow, badge, paginationControls } from '../components.js';
 import { Culture } from '../../models/ClinicalRecords.js';
 
 export const cultivosSection = {
   id: 'cultivos',
 
-  render(record, { today }) {
+  render(record, { today, pagination } = {}) {
     // Solo la fila más reciente de cada tipo periódico muestra próximo/último, para no
     // repetir la misma información en cada fila histórica (sería ruido).
     const periodicByLastId = new Map(Culture.periodicStatuses(record.cultures, today).map(s => [s.lastId, s]));
@@ -34,6 +34,7 @@ export const cultivosSection = {
       : emptyRow(6);
 
     return `${sectionHeader('Cultivos', 'modal-cultivo')}
-      ${tableWrap(rows, ['Tipo', 'Enviado', 'Días transcurridos', 'Resultado', 'Observaciones', ''])}`;
+      ${tableWrap(rows, ['Tipo', 'Enviado', 'Días transcurridos', 'Resultado', 'Observaciones', ''])}
+      ${paginationControls(pagination, 'cultivos')}`;
   }
 };

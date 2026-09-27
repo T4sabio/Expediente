@@ -55,7 +55,9 @@ function makeView() {
     getSearchInput: () => ({ query: '', servicio: '' }),
     renderSearchResults: record('renderSearchResults'), hideSearchResults: record('hideSearchResults'),
     showSearchSpinner: record('showSearchSpinner'), hideSearchSpinner: record('hideSearchSpinner'),
-    announceSearchStatus: record('announceSearchStatus'), showFatalError: record('showFatalError')
+    announceSearchStatus: record('announceSearchStatus'), showFatalError: record('showFatalError'),
+    renderRound: record('renderRound'), renderRoundLoading: record('renderRoundLoading'), setUiPreferences: record('setUiPreferences'),
+    setNovedadesCount: record('setNovedadesCount'), focusSearch: record('focusSearch')
   };
 }
 function makeModals(formValues = {}) {
@@ -77,13 +79,13 @@ function setup({ session = null, auth = {}, api = {} } = {}) {
   const fullAuth = {
     getSession: async () => session,
     onAuthStateChange: () => {},
-    getMyProfile: async () => ({ nombre: 'Dra. Ruiz', rol: 'medico', pendiente: false }),
+    getMyProfile: async () => ({ nombre: 'Dra. Ruiz', rol: 'medico', activo: true, pendiente: false }),
     signInWithPassword: async () => ({}),
     signUp: async () => ({}),
     signOut: async () => {},
     ...auth
   };
-  const fullApi = { listServicios: async () => [], ...api };
+  const fullApi = { listServicios: async () => [], getRoundOverview: async () => [], ...api };
   const controller = new DashboardController({ api: fullApi, auth: fullAuth, state, view, modals, toast, charts });
   return { controller, view, modals, toast, state, auth: fullAuth, api: fullApi };
 }
@@ -202,4 +204,17 @@ test('completar-pendiente: sin conflicto, el cambio optimista se mantiene', asyn
   await new Promise(r => setTimeout(r, 0));
 
   assert.equal(state.get().record.tasks[0].Estado, 'Realizado');
+});
+
+
+test('init(): una cuenta inactiva no entra al dashboard', async () => {
+  const { controller, view, auth } = setup({
+    session: { user: { id: 'u1' } },
+    auth: { getMyProfile: async () => ({ nombre: 'Dra. Ruiz', rol: 'medico', activo: false, pendiente: false }) }
+  });
+  await controller.init();
+  assert.ok(view.calls.some(c => c[0] === 'showLoginScreen'));
+  assert.ok(view.calls.some(c => c[0] === 'showLoginError' && /inactivo/i.test(c[1])));
+  assert.ok(!view.calls.some(c => c[0] === 'hideLoginScreen'));
+  assert.ok(auth);
 });

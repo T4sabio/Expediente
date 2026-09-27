@@ -83,5 +83,6 @@ export const SECTIONS = Object.freeze([
   { id: 'laboratorios', label: 'Laboratorios', icon: 'flask' },
   { id: 'consultas', label: 'Interconsultas', icon: 'chat' },
   { id: 'cultivos', label: 'Cultivos', icon: 'dish' },
-  { id: 'pendientes', label: 'Pendientes', icon: 'check' }
+  { id: 'pendientes', label: 'Pendientes', icon: 'check' },
+  { id: 'timeline', label: 'Línea temporal', icon: 'clock' }
 ]);

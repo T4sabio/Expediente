@@ -8,6 +8,7 @@ const ICONS = {
   flask: svg(`<path d="M9 3h6M10 3v6l-5.5 9.5A1.5 1.5 0 0 0 5.8 21h12.4a1.5 1.5 0 0 0 1.3-2.5L14 9V3" ${S} stroke-linecap="round" stroke-linejoin="round"/>`),
   chat: svg(`<path d="M4 4h16v12H8l-4 4V4Z" ${S} stroke-linejoin="round"/>`),
   dish: svg(`<circle cx="12" cy="12" r="9" ${S}/><circle cx="9" cy="10" r="1" fill="currentColor"/><circle cx="14" cy="13" r="1" fill="currentColor"/><circle cx="11" cy="15" r="1" fill="currentColor"/>`),
+  clock: svg(`<circle cx="12" cy="12" r="8.5" ${S}/><path d="M12 7v5l3 2" ${S} stroke-linecap="round" stroke-linejoin="round"/>`),
   check: svg(`<rect x="4" y="3" width="16" height="18" rx="2" ${S}/><path d="M8 11l3 3 5-6" ${S} stroke-linecap="round" stroke-linejoin="round"/>`)
 };
 

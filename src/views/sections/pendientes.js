@@ -1,5 +1,5 @@
 import { escapeHtml as esc, fmtDate } from '../../utils/formatters.js';
-import { sectionHeader } from '../components.js';
+import { sectionHeader, paginationControls } from '../components.js';
 
 /**
  * Checklist de pendientes para el paciente abierto (alcance de esta iteración: un solo
@@ -48,7 +48,7 @@ function historyByDay(tasks, today) {
 export const pendientesSection = {
   id: 'pendientes',
 
-  render(record, { today }) {
+  render(record, { today, pagination } = {}) {
     const tasks = record.tasks;
     const overdue = tasks.filter(t => t.isOverdue(today));
     const todayTasks = tasks.filter(t => t.scheduledDay(today) === today);
@@ -98,6 +98,7 @@ export const pendientesSection = {
               <div class="mt-1.5">${group(items, { today })}</div>
             </details>`).join('')}
         </div>
-      </details>` : ''}`;
+      </details>` : ''}
+      ${paginationControls(pagination, 'pendientes')}`;
   }
 };

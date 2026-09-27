@@ -1,5 +1,5 @@
 import { escapeHtml as esc, fmtDate, isHttpUrl, orDash } from '../../utils/formatters.js';
-import { sectionHeader, tableWrap, emptyRow } from '../components.js';
+import { sectionHeader, tableWrap, emptyRow, paginationControls } from '../components.js';
 
 function tableRows(rows) {
   if (!rows.length) return emptyRow(5);
@@ -24,7 +24,7 @@ function drawChart(charts, labs, tipo) {
 export const laboratoriosSection = {
   id: 'laboratorios',
 
-  render(record) {
+  render(record, { pagination } = {}) {
     const tipos = record.labTypes;
     return `
       ${sectionHeader('Laboratorios', 'modal-lab')}
@@ -38,7 +38,8 @@ export const laboratoriosSection = {
           ? '<canvas id="labChart"></canvas>'
           : '<p class="text-sm text-[#5C6B67] py-10 text-center">Sin resultados numéricos para graficar.</p>'}</div>
       </div>
-      ${tableWrap(tableRows(record.labs), ['Fecha', 'Tipo', 'Valor', 'Resultado', 'PDF'])}`;
+      ${tableWrap(tableRows(record.labs), ['Fecha', 'Tipo', 'Valor', 'Resultado', 'PDF'])}
+      ${paginationControls(pagination, 'laboratorios')}`;
   },
 
   mount(root, record, { charts }) {

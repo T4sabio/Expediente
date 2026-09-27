@@ -7,18 +7,17 @@ const VITAL_HEADERS = ['Fecha / hora', 'PA', 'PAM', 'FC', 'SpO2', 'Temp', 'FR'];
 export function sectionHeader(title, modalId) {
   return `<div class="flex items-center justify-between mb-4">
     <h2 class="font-semibold text-[15px]">${esc(title)}</h2>
-    <button data-action="open-modal" data-modal="${esc(modalId)}" class="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent text-white text-sm hover:bg-ink transition">
+    <button type="button" data-action="open-modal" data-modal="${esc(modalId)}" class="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent text-white text-sm hover:bg-ink transition">
       ${PLUS}
       Agregar
     </button>
   </div>`;
 }
 
-/** `rowsHtml` debe venir ya escapado por quien lo construye. */
 export function tableWrap(rowsHtml, headers = VITAL_HEADERS) {
   return `<div class="bg-white rounded-lg border border-hairline overflow-x-auto">
     <table class="clinical w-full text-sm">
-      <thead><tr>${headers.map(x => `<th class="py-2.5 px-3 text-left">${esc(x)}</th>`).join('')}</tr></thead>
+      <thead><tr>${headers.map(x => `<th scope="col" class="py-2.5 px-3 text-left">${esc(x)}</th>`).join('')}</tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table>
   </div>`;
@@ -26,6 +25,22 @@ export function tableWrap(rowsHtml, headers = VITAL_HEADERS) {
 
 export function emptyRow(colspan) {
   return `<tr><td colspan="${colspan}" class="py-8 text-center text-sm text-[#9AA6A2]">Sin registros todavía.</td></tr>`;
+}
+
+export function paginationControls(meta, label = 'registros') {
+  if (!meta || meta.totalPages <= 1) return '';
+  const current = Number(meta.page) || 1;
+  const totalPages = Number(meta.totalPages) || 1;
+  const total = Number(meta.total) || 0;
+  return `<nav class="mt-4 flex items-center justify-between gap-3" aria-label="Paginación de ${esc(label)}">
+    <span class="text-xs text-[#5C6B67]">Página ${current} de ${totalPages} · ${total} ${esc(label)}</span>
+    <div class="flex items-center gap-1.5">
+      <button type="button" data-action="page-section" data-list-key="${esc(meta.listKey ?? '')}" data-page="${current - 1}" ${current <= 1 ? 'disabled' : ''}
+        class="px-2.5 py-1.5 text-xs rounded-md border border-hairline disabled:opacity-40 hover:border-accent">Anterior</button>
+      <button type="button" data-action="page-section" data-list-key="${esc(meta.listKey ?? '')}" data-page="${current + 1}" ${current >= totalPages ? 'disabled' : ''}
+        class="px-2.5 py-1.5 text-xs rounded-md border border-hairline disabled:opacity-40 hover:border-accent">Siguiente</button>
+    </div>
+  </nav>`;
 }
 
 const TONES = {
@@ -50,13 +65,8 @@ export function summaryPanel(title, count, items, gotoSection) {
   </button>`;
 }
 
-/** Clase CSS para el valor (color) — se usa junto con abnormalMark(), nunca solo el color. */
 export const cellFlag = (key, val) => (VitalSigns.isValueAbnormal(key, val) ? 'text-critical font-semibold' : '');
 
-/**
- * Marca textual/icónica de un valor fuera de rango (▲ alto / ▼ bajo), para que no
- * dependa únicamente del color (daltonismo). Devuelve '' si el valor es normal.
- */
 export function abnormalMark(key, val) {
   if (!VitalSigns.isValueAbnormal(key, val)) return '';
   const dir = VitalSigns.abnormalDirection ? VitalSigns.abnormalDirection(key, val) : null;

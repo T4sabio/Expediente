@@ -1,10 +1,10 @@
 import { escapeHtml as esc, fmtDate } from '../../utils/formatters.js';
-import { sectionHeader, tableWrap, emptyRow, badge } from '../components.js';
+import { sectionHeader, tableWrap, emptyRow, badge, paginationControls } from '../components.js';
 
 export const medicamentosSection = {
   id: 'medicamentos',
 
-  render(record, { today }) {
+  render(record, { today, pagination } = {}) {
     const rows = record.medications.length
       ? record.medications.map(m => {
           const days = m.treatmentDays(today);
@@ -26,6 +26,7 @@ export const medicamentosSection = {
       : emptyRow(6);
 
     return `${sectionHeader('Medicamentos', 'modal-med')}
-      ${tableWrap(rows, ['Medicamento', 'Dosis / frecuencia', 'Inicio', 'Días de tratamiento', 'Estado', ''])}`;
+      ${tableWrap(rows, ['Medicamento', 'Dosis / frecuencia', 'Inicio', 'Días de tratamiento', 'Estado', ''])}
+      ${paginationControls(pagination, 'medicamentos')}`;
   }
 };

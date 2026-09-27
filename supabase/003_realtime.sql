@@ -12,14 +12,23 @@
 -- ============================================================================
 
 do $$
-declare t text;
+declare
+  t text;
+  in_publication boolean;
 begin
   foreach t in array array['DB_Pacientes','DB_SignosVitales','DB_Medicamentos',
                             'DB_Laboratorios','DB_Consultas','DB_Cultivos','DB_Pendientes']
   loop
-    execute format('alter publication supabase_realtime add table public.%I', t);
+    select exists (
+      select 1
+      from pg_publication_tables
+      where pubname = 'supabase_realtime'
+        and schemaname = 'public'
+        and tablename = t
+    ) into in_publication;
+
+    if not in_publication then
+      execute format('alter publication supabase_realtime add table public.%I', t);
+    end if;
   end loop;
-exception when duplicate_object then
-  -- Ya estaban agregadas (ej. si este script se corre dos veces): no pasa nada.
-  null;
 end $$;

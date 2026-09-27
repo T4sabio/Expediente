@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Unit tests
+        run: npm run test:unit
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Start local Supabase
+        run: supabase start
+      - name: Export Supabase test credentials
+        shell: bash
+        run: |
+          eval "$(supabase status -o env)"
+          echo "SUPABASE_TEST_URL=$API_URL" >> "$GITHUB_ENV"
+          echo "SUPABASE_TEST_ANON_KEY=$ANON_KEY" >> "$GITHUB_ENV"
+          echo "SUPABASE_TEST_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY" >> "$GITHUB_ENV"
+          echo "VITE_SUPABASE_URL=$API_URL" >> "$GITHUB_ENV"
+          echo "VITE_SUPABASE_ANON_KEY=$ANON_KEY" >> "$GITHUB_ENV"
+      - name: Database tests
+        run: supabase test db
+      - name: Integration tests against real Supabase
+        run: npm run test:integration
+      - name: Build production bundle
+        run: npm run build
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: E2E, accessibility and performance tests
+        # Ejecuta de una vez smoke + accesibilidad + performance bajo e2e/.
+        run: npm run test:browser
+      - name: Dependency audit
+        run: npm run audit
