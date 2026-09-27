@@ -20,8 +20,18 @@ export const VITAL_RANGES = Object.freeze({
   Frecuencia_Cardiaca: [60, 100],
   SpO2: [95, 100],
   Temperatura: [36.0, 37.5],
-  Frecuencia_Respiratoria: [12, 20]
+  Frecuencia_Respiratoria: [12, 20],
+  // PAM se calcula (no se captura en el formulario), pero se agrega aquí para que
+  // las tarjetas de "Resumen clínico" (genéricas por Object.keys(VITAL_RANGES)) y el
+  // marcado de anormalidad la reconozcan igual que a los demás signos vitales.
+  // Por debajo de 65 se considera hipoperfusión en adultos.
+  PAM: [70, 100]
 });
+
+/** Signos vitales que se capturan en el formulario (excluye PAM, que es calculada). */
+export const VITAL_INPUT_KEYS = Object.freeze([
+  'PA_Sistolica', 'PA_Diastolica', 'Frecuencia_Cardiaca', 'SpO2', 'Temperatura', 'Frecuencia_Respiratoria'
+]);
 
 /** Límites fisiológicamente posibles: fuera de ellos se asume error de digitación y se rechaza. */
 export const VITAL_LIMITS = Object.freeze({
@@ -39,7 +49,8 @@ export const VITAL_LABELS = Object.freeze({
   Frecuencia_Cardiaca: 'FC',
   SpO2: 'SpO2',
   Temperatura: 'Temp.',
-  Frecuencia_Respiratoria: 'FR'
+  Frecuencia_Respiratoria: 'FR',
+  PAM: 'PAM'
 });
 
 export const PROLONGED_TREATMENT_DAYS = 14;

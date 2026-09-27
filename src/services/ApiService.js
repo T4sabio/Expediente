@@ -204,6 +204,13 @@ export class ApiService {
       'Otra persona ya actualizó este pendiente mientras tanto.');
   }
 
+  /** Revierte "completeTask" — usado por el botón "Deshacer" del toast (patrón tipo Gmail). */
+  uncompleteTask(id, expectedModificadoEn) {
+    return this.#runWithConflictCheck(T.TASKS, id,
+      { Estado: 'Pendiente', Fecha_Completado: null }, expectedModificadoEn,
+      'Otra persona ya actualizó este pendiente mientras tanto.');
+  }
+
   suspendMedication(id, expectedModificadoEn) {
     return this.#runWithConflictCheck(T.MEDS, id,
       { Activo: 'No', Fecha_Omision: todayISODate() }, expectedModificadoEn,

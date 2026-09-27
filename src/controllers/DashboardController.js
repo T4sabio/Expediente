@@ -32,7 +32,7 @@ export class DashboardController {
 
     this.#actions = {
       'switch-section': el => this.switchSection(el.dataset.section),
-      'open-modal': el => this.#modals.open(el.dataset.modal),
+      'open-modal': el => { this.#resetConditionalFields(el.dataset.modal); this.#modals.open(el.dataset.modal); },
       'close-modal': el => this.#modals.close(el.dataset.modal),
       'select-patient': el => this.#selectByHC(el.dataset.hc),
       'refresh': () => { if (this.#state.get().currentHC) this.loadPatient(this.#state.get().currentHC, { silent: true }); },
@@ -42,9 +42,10 @@ export class DashboardController {
       'suspender-med': el => this.#quickActionOptimistic('medications', Number(el.dataset.id),
         { Activo: 'No', Fecha_Omision: todayISODate() },
         expected => this.#api.suspendMedication(Number(el.dataset.id), expected), 'Medicamento suspendido'),
-      'completar-pendiente': el => this.#quickActionOptimistic('tasks', Number(el.dataset.id),
-        { Estado: 'Realizado', Fecha_Completado: new Date().toISOString() },
-        expected => this.#api.completeTask(Number(el.dataset.id), expected), 'Pendiente marcado como realizado'),
+      'completar-pendiente': el => this.#completeTaskWithUndo(Number(el.dataset.id)),
+      'descompletar-pendiente': el => this.#quickActionOptimistic('tasks', Number(el.dataset.id),
+        { Estado: 'Pendiente', Fecha_Completado: null },
+        expected => this.#api.uncompleteTask(Number(el.dataset.id), expected), 'Pendiente marcado como no realizado'),
       'responder-consulta': el => this.#modals.open('modal-responder', { _row: el.dataset.id }),
       'resultado-cultivo': el => this.#modals.open('modal-resultado-cultivo', { _row: el.dataset.id }),
       'cerrar-sesion': () => this.#signOut(),
@@ -61,6 +62,7 @@ export class DashboardController {
       'form-consulta': record('modal-consulta', (f, hc) => Consultation.fromForm(f, hc), e => this.#api.addConsultation(e), 'Interconsulta enviada'),
       'form-cultivo': record('modal-cultivo', (f, hc) => Culture.fromForm(f, hc), e => this.#api.addCulture(e), 'Cultivo enviado a microbiología'),
       'form-pendiente': record('modal-pendiente', (f, hc) => PendingTask.fromForm(f, hc), e => this.#api.addTask(e), 'Tarea pendiente agregada'),
+      'form-pendiente-rapido': form => this.#addQuickTask(form),
       'form-responder': form => this.#submitSimple(form, 'modal-responder', 'Respuesta registrada', f =>
         this.#api.answerConsultation(Number(f._row), String(f.Respuesta_Departamento).trim(),
           this.#findItem('consultations', Number(f._row))?.Modificado_En)),
@@ -143,6 +145,12 @@ export class DashboardController {
    * dispara el diálogo de impresión del navegador (de ahí puede guardarse como PDF).
    * No usa una librería nueva: aprovecha el mismo render() de cada sección.
    */
+  /** Vuelve a ocultar los campos condicionales (frecuencia/intervalo) al reabrir un modal. */
+  #resetConditionalFields(modalId) {
+    if (modalId === 'modal-med') document.getElementById('medFrecuenciaHorasWrap')?.classList.add('hidden');
+    if (modalId === 'modal-cultivo') document.getElementById('cultivoIntervaloWrap')?.classList.add('hidden');
+  }
+
   #printRecord() {
     const { record } = this.#state.get();
     if (!record) { this.#toast.show('Selecciona un paciente primero.', 'error'); return; }
@@ -177,6 +185,12 @@ export class DashboardController {
     document.addEventListener('change', e => {
       if (e.target.id === 'servicioFilter') this.#runSearch();
       if (e.target.name === 'Edad_Unidad') this.#state.set({ lastAgeUnit: e.target.value });
+      if (e.target.id === 'medRequiereSeguimiento') {
+        document.getElementById('medFrecuenciaHorasWrap')?.classList.toggle('hidden', !e.target.checked);
+      }
+      if (e.target.id === 'cultivoEsPeriodico') {
+        document.getElementById('cultivoIntervaloWrap')?.classList.toggle('hidden', !e.target.checked);
+      }
     });
     document.addEventListener('keydown', e => {
       if (e.key === 'Enter' && e.target.id === 'patientSearch') { e.preventDefault(); this.#selectFirstMatch(); }
@@ -375,6 +389,41 @@ export class DashboardController {
     this.#modals.close(modalId);
     this.#toast.show(message);
     await this.#reload();
+  }
+
+  /** Atajo de "agregar rápido" del checklist de pendientes: solo descripción, programado para hoy. */
+  async #addQuickTask(form) {
+    const hc = this.#state.get().currentHC;
+    if (!hc) throw new Error('Selecciona un paciente primero.');
+    const descripcion = String(new FormData(form).get('Descripcion_Tarea') ?? '').trim();
+    if (!descripcion) return;
+    await this.#api.addTask(PendingTask.fromForm({ Descripcion_Tarea: descripcion }, hc));
+    form.reset();
+    await this.#reload();
+  }
+
+  /** Marca un pendiente como realizado (optimista) y ofrece deshacerlo desde el toast (patrón tipo Gmail). */
+  async #completeTaskWithUndo(id) {
+    const { record } = this.#state.get();
+    if (!record) return;
+    const previous = record;
+    const expected = this.#findItem('tasks', id)?.Modificado_En;
+    this.#state.set({ record: record.withPatchedItem('tasks', id, { Estado: 'Realizado', Fecha_Completado: new Date().toISOString() }) });
+    try {
+      await this.#api.completeTask(id, expected);
+      this.#toast.show('Pendiente marcado como realizado', 'ok', {
+        action: {
+          label: 'Deshacer',
+          onClick: () => this.#quickActionOptimistic('tasks', id,
+            { Estado: 'Pendiente', Fecha_Completado: null },
+            exp => this.#api.uncompleteTask(id, exp), 'Pendiente restaurado')
+        }
+      });
+    } catch (err) {
+      if (this.#state.get().record !== previous) this.#state.set({ record: previous });
+      if (err instanceof ConflictError) { this.#toast.show(err.message, 'error'); await this.#reload(); }
+      else { this.#toast.show('No se pudo guardar: ' + this.#friendlyErrorMessage(err), 'error'); reportError(err, { action: 'completeTaskWithUndo' }); }
+    }
   }
 
   /** Busca un elemento por id dentro de una lista del expediente abierto (medications, tasks, ...). */

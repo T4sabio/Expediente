@@ -1,16 +1,27 @@
-import { escapeHtml as esc, fmtDate, orDash } from '../../utils/formatters.js';
+import { escapeHtml as esc, fmtDate, fmtRelativeCalendarDate, orDash } from '../../utils/formatters.js';
 import { sectionHeader, tableWrap, emptyRow, badge } from '../components.js';
+import { Culture } from '../../models/ClinicalRecords.js';
 
 export const cultivosSection = {
   id: 'cultivos',
 
   render(record, { today }) {
+    // Solo la fila más reciente de cada tipo periódico muestra próximo/último, para no
+    // repetir la misma información en cada fila histórica (sería ruido).
+    const periodicByLastId = new Map(Culture.periodicStatuses(record.cultures, today).map(s => [s.lastId, s]));
     const rows = record.cultures.length
       ? record.cultures.map(c => {
           const tone = c.isPending ? 'warn' : (c.Resultado === 'Positivo' ? 'critical' : 'ok');
           const dias = c.elapsedDays(today);
+          const periodic = periodicByLastId.get(c.id);
+          const periodicLine = periodic
+            ? `<div class="mt-1">${periodic.overdue
+                ? badge(`Atrasado desde ${fmtDate(periodic.nextDate)}`, 'critical')
+                : badge(`Próximo: ${fmtRelativeCalendarDate(periodic.nextDate, today)}`, fmtRelativeCalendarDate(periodic.nextDate, today) === 'hoy' ? 'warn' : 'gray')}
+              <span class="ml-1 text-[11px] text-[#9AA6A2]">Último: ${esc(fmtDate(periodic.lastDate))}</span></div>`
+            : '';
           return `<tr>
-            <td class="py-2 px-3 font-medium">${esc(c.Tipo_Cultivo)}</td>
+            <td class="py-2 px-3 font-medium">${esc(c.Tipo_Cultivo)}${periodicLine}</td>
             <td class="py-2 px-3 font-mono-data text-xs">${fmtDate(c.Fecha_Envio)}</td>
             <td class="py-2 px-3 font-mono-data text-xs">${dias === null ? '—' : dias + 'd'}</td>
             <td class="py-2 px-3">${badge(c.Resultado || 'Pendiente', tone)}</td>

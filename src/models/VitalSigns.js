@@ -1,8 +1,11 @@
-import { VITAL_RANGES, VITAL_LIMITS, VITAL_LABELS } from '../utils/constants.js';
+import { VITAL_RANGES, VITAL_LIMITS, VITAL_LABELS, VITAL_INPUT_KEYS } from '../utils/constants.js';
 import { wallTimeToOffsetISO } from '../utils/formatters.js';
 import { ValidationError } from '../utils/errors.js';
 
-const KEYS = Object.keys(VITAL_RANGES);
+// KEYS = campos que se capturan en el formulario. PAM se calcula (ver #computePam) y
+// NO se incluye aquí: si se incluyera, `validate()` la rechazaría por no tener un valor
+// de formulario ni límites de captura propios (ver VITAL_INPUT_KEYS en constants.js).
+const KEYS = VITAL_INPUT_KEYS;
 
 /** Una toma de signos vitales, con detección de valores anormales y validación de captura. */
 export class VitalSigns {
@@ -11,6 +14,19 @@ export class VitalSigns {
     this.HC = row.HC;
     this.Fecha_Hora = row.Fecha_Hora;
     for (const k of KEYS) this[k] = row[k] ?? null;
+    // PAM: si la columna generada de la BD ya la trae (row.PAM), se respeta esa (fuente
+    // única de verdad); si no existe todavía en el entorno, se calcula en el cliente
+    // como espejo — mismo patrón defensivo que ya usa la app con RPCs faltantes.
+    this.PAM = row.PAM !== undefined && row.PAM !== null
+      ? Number(row.PAM)
+      : VitalSigns.computePam(this.PA_Sistolica, this.PA_Diastolica);
+  }
+
+  /** PAM = diastólica + (sistólica − diastólica) / 3, redondeada a 1 decimal. */
+  static computePam(sistolica, diastolica) {
+    const s = Number(sistolica), d = Number(diastolica);
+    if (!Number.isFinite(s) || !Number.isFinite(d)) return null;
+    return Math.round((d + (s - d) / 3) * 10) / 10;
   }
 
   /** ¿Está el valor fuera del rango normal? Los valores vacíos no se marcan. */

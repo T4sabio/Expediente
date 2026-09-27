@@ -1,4 +1,4 @@
-import { blankToNull, daysBetween, isHttpUrl, todayISODate } from '../utils/formatters.js';
+import { blankToNull, daysBetween, isHttpUrl, todayISODate, addDaysToCalendarDate, calendarDaysDiff, calendarDateOf } from '../utils/formatters.js';
 import { ValidationError } from '../utils/errors.js';
 
 const required = (value, message) => {
@@ -65,19 +65,73 @@ export class Culture extends BaseRecord {
     return daysBetween(this.Fecha_Envio, this.Fecha_Resultado || today);
   }
 
+  get isPeriodic() {
+    return (this.Es_Periodico === true || this.Es_Periodico === 'true') && Number(this.Intervalo_Horas) > 0;
+  }
+
   static fromForm(form, hc) {
     if (!form.Fecha_Envio) throw new ValidationError('La fecha de envío es obligatoria.');
+    const periodico = form.Es_Periodico === 'on' || form.Es_Periodico === true;
+    const intervalo = String(form.Intervalo_Horas ?? '').trim();
     return new Culture({
       HC: hc,
       Tipo_Cultivo: required(form.Tipo_Cultivo, 'El tipo de cultivo es obligatorio.'),
-      Fecha_Envio: form.Fecha_Envio
+      Fecha_Envio: form.Fecha_Envio,
+      Es_Periodico: periodico,
+      Intervalo_Horas: periodico && intervalo !== '' ? Number(intervalo) : null
     });
+  }
+
+  /**
+   * Agrupa los cultivos periódicos de un paciente por Tipo_Cultivo (ej. "Hemocultivo")
+   * y calcula, para el más reciente de cada tipo, cuándo corresponde el próximo.
+   * Cada fila real sigue siendo una toma independiente; esto es solo metadato de
+   * "cómo se agendó", no un cultivo recurrente virtual.
+   */
+  static periodicStatuses(cultures, today = todayISODate()) {
+    const byType = new Map();
+    for (const c of cultures) {
+      if (!c.isPeriodic) continue;
+      if (!byType.has(c.Tipo_Cultivo)) byType.set(c.Tipo_Cultivo, []);
+      byType.get(c.Tipo_Cultivo).push(c);
+    }
+    const out = [];
+    for (const [tipo, list] of byType) {
+      const last = list.slice().sort((a, b) => (a.Fecha_Envio < b.Fecha_Envio ? 1 : -1))[0];
+      const nextDate = addDaysToCalendarDate(last.Fecha_Envio, Number(last.Intervalo_Horas) / 24);
+      const diff = calendarDaysDiff(today, nextDate);
+      out.push({ tipo, lastId: last.id, lastDate: last.Fecha_Envio, nextDate, overdue: diff !== null && diff < 0 });
+    }
+    return out;
   }
 }
 
 export class PendingTask extends BaseRecord {
   get isDone() {
     return this.Estado === 'Realizado';
+  }
+
+  /** Día para el que "vive" el pendiente: si no se programó, se trata como si fuera para hoy. */
+  scheduledDay(today = todayISODate()) {
+    return this.Fecha_Programada || calendarDateOf(this.Fecha_Solicitud) || today;
+  }
+
+  isOverdue(today = todayISODate()) {
+    if (this.isDone) return false;
+    const diff = calendarDaysDiff(today, this.scheduledDay(today));
+    return diff !== null && diff < 0;
+  }
+
+  isForToday(today = todayISODate()) {
+    if (this.isDone) return false;
+    const diff = calendarDaysDiff(today, this.scheduledDay(today));
+    return diff === 0;
+  }
+
+  isFuture(today = todayISODate()) {
+    if (this.isDone) return false;
+    const diff = calendarDaysDiff(today, this.scheduledDay(today));
+    return diff !== null && diff > 0;
   }
 
   static fromForm(form, hc) {

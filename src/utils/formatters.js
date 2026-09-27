@@ -81,13 +81,40 @@ export function todayISODate(now = new Date()) {
   return calendarDateOf(now);
 }
 
-/** Días calendario entre dos fechas/instantes. `null` si alguna es inválida. Nunca negativo. */
-export function daysBetween(from, to) {
+/** Días calendario con signo entre dos fechas/instantes (to - from). `null` si alguna es inválida. */
+export function calendarDaysDiff(from, to) {
   const a = calendarDateOf(from);
   const b = calendarDateOf(to);
   if (!a || !b) return null;
-  const diff = (Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / DAY_MS;
-  return Math.max(0, Math.round(diff));
+  return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / DAY_MS);
+}
+
+/** Días calendario entre dos fechas/instantes. `null` si alguna es inválida. Nunca negativo. */
+export function daysBetween(from, to) {
+  const diff = calendarDaysDiff(from, to);
+  return diff === null ? null : Math.max(0, diff);
+}
+
+/** Suma (o resta) días —pueden ser fraccionarios, ej. 48h = 2— a una fecha calendario (YYYY-MM-DD). */
+export function addDaysToCalendarDate(value, days) {
+  const d = calendarDateOf(value);
+  if (!d || !Number.isFinite(days)) return null;
+  const ms = Date.parse(`${d}T00:00:00Z`) + days * DAY_MS;
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+/**
+ * Fraseo relativo para una fecha CALENDARIO futura o pasada respecto a "hoy" (no un instante):
+ * 'hoy' / 'mañana' / fecha completa si falta más de un día, o `null` si ya pasó (atrasado) —
+ * el llamador decide cómo frasear el atraso, ya que el tono visual difiere ("atrasado desde...").
+ */
+export function fmtRelativeCalendarDate(value, today = todayISODate()) {
+  const diff = calendarDaysDiff(today, value);
+  if (diff === null) return '—';
+  if (diff < 0) return null;
+  if (diff === 0) return 'hoy';
+  if (diff === 1) return 'mañana';
+  return fmtDate(value);
 }
 
 function tzOffsetMs(ts) {

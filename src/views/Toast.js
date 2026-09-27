@@ -19,14 +19,16 @@ export class Toast {
 
   /**
    * @param {'ok'|'error'|'warn'} type
-   * @param {{persistent?: boolean, id?: string}} [opts] `persistent` evita el auto-cierre
-   *   y agrega un botón para cerrar a mano — para avisos que siguen siendo válidos
-   *   más allá de los ~4s de un toast normal (ej. "sin conexión", "búsqueda en modo
-   *   básico"). `id` permite reemplazar/actualizar un aviso persistente existente
-   *   en vez de apilar uno nuevo cada vez que se repite la misma condición.
+   * @param {{persistent?: boolean, id?: string, action?: {label: string, onClick: Function}}} [opts]
+   *   `persistent` evita el auto-cierre y agrega un botón para cerrar a mano — para
+   *   avisos que siguen siendo válidos más allá de los ~4s de un toast normal (ej.
+   *   "sin conexión", "búsqueda en modo básico"). `id` permite reemplazar/actualizar
+   *   un aviso persistente existente en vez de apilar uno nuevo cada vez que se repite
+   *   la misma condición. `action` agrega un botón (ej. "Deshacer", patrón tipo Gmail);
+   *   al pulsarlo se llama `onClick` y el toast se cierra.
    */
   show(message, type = 'ok', opts = {}) {
-    const { persistent = false, id: stickyId } = opts;
+    const { persistent = false, id: stickyId, action } = opts;
     if (stickyId) this.dismiss(stickyId);
     const id = ++this.#seq;
     const el = document.createElement('div');
@@ -38,6 +40,14 @@ export class Toast {
     const text = document.createElement('span');
     text.textContent = message;
     el.appendChild(text);
+    if (action) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'shrink-0 underline underline-offset-2 opacity-90 hover:opacity-100 text-sm font-semibold';
+      btn.textContent = action.label;
+      btn.addEventListener('click', () => { el.remove(); action.onClick(); });
+      el.appendChild(btn);
+    }
     if (persistent) {
       const close = document.createElement('button');
       close.type = 'button';

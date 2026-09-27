@@ -2,7 +2,7 @@ import { escapeHtml as esc } from '../utils/formatters.js';
 import { VitalSigns } from '../models/VitalSigns.js';
 
 const PLUS = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="white" stroke-width="2.2" stroke-linecap="round"/></svg>';
-const VITAL_HEADERS = ['Fecha / hora', 'PA', 'FC', 'SpO2', 'Temp', 'FR'];
+const VITAL_HEADERS = ['Fecha / hora', 'PA', 'PAM', 'FC', 'SpO2', 'Temp', 'FR'];
 
 export function sectionHeader(title, modalId) {
   return `<div class="flex items-center justify-between mb-4">

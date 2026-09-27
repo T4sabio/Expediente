@@ -10,7 +10,7 @@ export const medicamentosSection = {
           const days = m.treatmentDays(today);
           const prolonged = m.isProlonged(today);
           return `<tr>
-            <td class="py-2 px-3 font-medium">${esc(m.Nombre_Medicamento)}</td>
+            <td class="py-2 px-3 font-medium">${esc(m.Nombre_Medicamento)}${m.isTracked ? ` <span class="text-xs" title="Con seguimiento de días de cobertura">💊⏱</span>` : ''}</td>
             <td class="py-2 px-3 text-sm text-[#3C4A46]">${esc(m.Dosis_Frecuencia)}</td>
             <td class="py-2 px-3 font-mono-data text-xs">${fmtDate(m.Fecha_Inicio)}</td>
             <td class="py-2 px-3">

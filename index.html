@@ -194,6 +194,13 @@
             <option value="No">Inactivo</option>
           </select>
         </label>
+        <label class="col-span-2 flex items-center gap-2 text-xs text-[#5C6B67] mt-1">
+          <input type="checkbox" name="Requiere_Seguimiento_Dias" id="medRequiereSeguimiento" class="rounded border-hairline">
+          Requiere seguimiento de días de cobertura (ej. antibióticos)
+        </label>
+        <label id="medFrecuenciaHorasWrap" class="col-span-2 text-xs text-[#5C6B67] hidden">Frecuencia en horas (opcional, ej. 8)
+          <input name="Frecuencia_Horas" type="number" min="1" step="1" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
       </div>
       <div class="flex justify-end gap-2 mt-5">
         <button type="button" data-action="close-modal" data-modal="modal-med" class="px-4 py-2 text-sm rounded-md border border-hairline">Cancelar</button>
@@ -260,6 +267,14 @@
         </label>
         <label class="text-xs text-[#5C6B67]">Fecha de envío
           <input required name="Fecha_Envio" type="date" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="flex items-center gap-2 text-xs text-[#5C6B67]">
+          <input type="checkbox" name="Es_Periodico" id="cultivoEsPeriodico" class="rounded border-hairline">
+          Cultivo periódico (ej. hemocultivo cada 48h)
+        </label>
+        <label id="cultivoIntervaloWrap" class="text-xs text-[#5C6B67] hidden">Repetir cada (horas)
+          <input name="Intervalo_Horas" type="number" min="1" step="1" value="48" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+          <span class="block mt-1 text-[11px] text-[#9AA6A2]">Se calculará automáticamente cuándo corresponde el próximo, según la fecha de este envío.</span>
         </label>
       </div>
       <div class="flex justify-end gap-2 mt-5">
