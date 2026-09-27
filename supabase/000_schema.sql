@@ -74,6 +74,7 @@ create table if not exists public."DB_Pendientes" (
   "id"                            bigserial primary key,
   "HC"                            text not null references public."DB_Pacientes"("HC") on delete cascade,
   "Descripcion_Tarea"             text not null,
+  "Fecha_Solicitud"               date not null default current_date,
   "Fecha_Programada"              date,
   "Justificacion_Observaciones"   text,
   "Estado"                        text not null default 'Pendiente' check ("Estado" in ('Pendiente', 'Realizado')),
@@ -83,4 +84,5 @@ create table if not exists public."DB_Pendientes" (
 -- Nota: en este punto las tablas NO tienen Row Level Security todavía — eso lo
 -- activa 002_auth_rls_audit.sql (que también agrega Creado_Por/Modificado_Por/
 -- Modificado_En y, en DB_Pacientes, Eliminado_En/Eliminado_Por). Sigue con
--- 001_search_and_indexes.sql y luego 002 y 003, en ese orden.
+-- 001_search_and_indexes.sql, luego 002, 003 y 004 (correcciones y límites de
+-- longitud), en ese orden.

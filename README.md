@@ -5,8 +5,10 @@
 npm install
 cp .env.example .env.local     # completa VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY
 # Supabase → SQL Editor: ejecutar EN ORDEN
+#   0) supabase/000_schema.sql            ← crea las 7 tablas (solo en un proyecto NUEVO/vacío)
 #   1) supabase/001_search_and_indexes.sql
 #   2) supabase/002_auth_rls_audit.sql   ← autenticación, RLS, auditoría y borrado lógico
+#   3) supabase/003_realtime.sql          ← tiempo real (Supabase Realtime)
 npm run dev
 npm test                       # pruebas unitarias (sin dependencias, usa node:test)
 npm run build                  # salida en dist/
@@ -53,3 +55,30 @@ src/
 Flujo: `evento DOM → Controller → ApiService → AppState.set() → Controller reacciona → Views dibujan`.
 
 Nueva pestaña: crear `views/sections/<nombre>.js`, registrarla en `sections/index.js` y en `SECTIONS` (constants.js).
+
+## Accesibilidad y UX (segunda pasada)
+
+- **Teclado**: los paneles de resumen (`summaryPanel`) ahora son `<button>` reales; los
+  modales tienen *focus trap* (Tab no se escapa), foco inicial en el primer campo y el
+  foco regresa a quien abrió el modal al cerrarlo (`ModalManager.js`).
+- **Cierre de modal**: clic en el fondo oscuro cierra el modal (además de Escape/Cancelar).
+- **Toasts**: se apilan (ya no se pisan) y usan `aria-live`/`role="alert"` (`Toast.js`).
+- **Gráficos accesibles**: cada gráfico de signos vitales tiene una tabla `sr-only`
+  equivalente con la tendencia en texto ("en aumento/descenso/estable").
+- **No depender solo del color**: los valores anormales llevan además un ícono ▲/▼
+  con `aria-label` ("alto"/"bajo").
+- **Buscador**: tiene `<label>` accesible (oculto visualmente) y anuncia el número de
+  resultados en una región `aria-live`; muestra un spinner mientras busca.
+- **Validación de formularios**: el campo inválido se marca en rojo con el mensaje
+  justo debajo (`views/formValidation.js`), en vez de solo un toast al final.
+- **Tiempo real (Supabase Realtime)**: si otra persona registra algo del mismo
+  paciente, el expediente se refresca solo (`ApiService.subscribeToPatient`).
+  Requiere correr `supabase/003_realtime.sql`.
+- **UI optimista**: suspender medicamento / marcar pendiente actualizan la pantalla
+  al instante y revierten solo si el servidor rechaza el cambio.
+- **Tiempo relativo**: "Última toma: hace 12 min" en el resumen (`fmtRelative`).
+- **Imprimir/Exportar**: botón en la barra superior que arma una vista con todas las
+  secciones y abre el diálogo de impresión del navegador (puede guardarse como PDF).
+- **Conflictos de edición**: al editar un paciente se guarda el sello de la última
+  modificación conocida; si alguien más ya guardó cambios, el guardado se rechaza con
+  un aviso claro en vez de sobrescribir en silencio.

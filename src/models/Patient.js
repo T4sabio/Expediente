@@ -1,5 +1,6 @@
-import { formatEdad, parseEdad } from '../utils/formatters.js';
+import { formatEdad, parseEdad, normalizeMultiline } from '../utils/formatters.js';
 import { ValidationError } from '../utils/errors.js';
+import { FIELD_LIMITS } from '../utils/constants.js';
 
 /** Datos demográficos y clínicos generales de un paciente. */
 export class Patient {
@@ -13,6 +14,9 @@ export class Patient {
     this.Num_RayosX = row.Num_RayosX ?? '';
     this.Motivo_Consulta = row.Motivo_Consulta ?? '';
     this.Diagnosticos = row.Diagnosticos ?? '';
+    // Sello de la última modificación (llenado por el servidor); se usa para detectar
+    // ediciones concurrentes, nunca se envía de vuelta al servidor (ver toUpdateRow()).
+    this.Modificado_En = row.Modificado_En ?? null;
   }
 
   /** { valor, unidad } a partir del texto "3 meses". */
@@ -31,8 +35,8 @@ export class Patient {
       Edad: formatEdad(form.Edad, form.Edad_Unidad || 'años'),
       Fecha_Ingreso: form.Fecha_Ingreso ?? '',
       Num_RayosX: t(form.Num_RayosX),
-      Motivo_Consulta: t(form.Motivo_Consulta),
-      Diagnosticos: String(form.Diagnosticos ?? '').trimEnd()
+      Motivo_Consulta: normalizeMultiline(form.Motivo_Consulta),
+      Diagnosticos: normalizeMultiline(form.Diagnosticos)
     });
   }
 
@@ -41,6 +45,12 @@ export class Patient {
     if (requireHC && !this.HC) throw new ValidationError('La historia clínica (HC) es obligatoria.');
     if (!this.Nombre_Completo) throw new ValidationError('El nombre completo es obligatorio.');
     if (!this.Servicio) throw new ValidationError('El servicio es obligatorio.');
+    for (const [field, max] of Object.entries(FIELD_LIMITS)) {
+      const len = String(this[field] ?? '').length;
+      if (len > max) {
+        throw new ValidationError(`${field.replace(/_/g, ' ')}: máximo ${max} caracteres (tiene ${len}).`);
+      }
+    }
     return this;
   }
 
@@ -48,9 +58,9 @@ export class Patient {
     return { ...this };
   }
 
-  /** La HC es la clave primaria: no se actualiza. */
+  /** La HC es la clave primaria: no se actualiza. Modificado_En lo pone el servidor. */
   toUpdateRow() {
-    const { HC, ...rest } = this;
+    const { HC, Modificado_En, ...rest } = this;
     return rest;
   }
 }

@@ -47,6 +47,25 @@ export function fmtDateTime(value) {
   return d ? `${F.short.format(d)} ${F.time.format(d)}` : '—';
 }
 
+/**
+ * "hace 12 min", "hace 3 h", "hace 2 d" — más útil clínicamente que solo la hora
+ * absoluta para detectar signos vitales atrasados. Cae a fmtDateTime si es muy
+ * antiguo (>2 días) o si la fecha es inválida.
+ */
+export function fmtRelative(value, now = new Date()) {
+  const d = toDate(value);
+  if (!d) return '—';
+  const diffMs = now.getTime() - d.getTime();
+  const min = Math.round(diffMs / 60_000);
+  if (min < 1) return 'justo ahora';
+  if (min < 60) return `hace ${min} min`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `hace ${hr} h`;
+  const days = Math.round(hr / 24);
+  if (days <= 2) return `hace ${days} d`;
+  return fmtDateTime(value);
+}
+
 /** Día calendario (YYYY-MM-DD) de una fecha o instante, según la zona de la aplicación. */
 export function calendarDateOf(value) {
   if (!value) return null;
@@ -137,3 +156,19 @@ export const blankToNull = v => {
 };
 
 export const orDash = v => (v === null || v === undefined || v === '' ? '—' : v);
+
+/**
+ * Limpia texto libre largo (diagnósticos, motivo de consulta) antes de guardarlo:
+ * quita espacios al final de cada línea, colapsa más de 2 líneas en blanco seguidas
+ * a solo 2, y recorta espacios al inicio/final del bloque. No cambia el contenido
+ * clínico, solo el formato — para que copiar/pegar desde otro sistema no arrastre
+ * espacios invisibles que después hacen ver "distinto" un texto idéntico.
+ */
+export function normalizeMultiline(value) {
+  const text = String(value ?? '');
+  return text
+    .replace(/\r\n/g, '\n')
+    .split('\n').map(line => line.replace(/[ \t]+$/g, '')).join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}

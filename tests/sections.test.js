@@ -38,7 +38,7 @@ test('AppState notifica solo cuando algo cambia', () => {
 });
 
 test('ApiService cae a búsqueda ILIKE si falta la función SQL', async () => {
-  const builder = { select() { return this; }, order() { return this; }, limit() { return this; }, eq() { return this; },
+  const builder = { select() { return this; }, order() { return this; }, limit() { return this; }, eq() { return this; }, is() { return this; },
     or(expr) { this.expr = expr; return this; }, then(res) { res({ data: [{ HC: '1', Nombre_Completo: 'Ana' }], error: null }); } };
   const client = { rpc: async () => ({ data: null, error: { code: 'PGRST202', message: 'nf' } }), from: () => builder };
   const res = await new ApiService(client).searchPatients({ query: 'ana perez' });

@@ -20,6 +20,13 @@ export class VitalSigns {
     return Number(value) < range[0] || Number(value) > range[1];
   }
 
+  /** 'alto' | 'bajo' | null — para no depender solo del color al marcar valores anormales. */
+  static abnormalDirection(key, value) {
+    const range = VITAL_RANGES[key];
+    if (!range || !VitalSigns.isValueAbnormal(key, value)) return null;
+    return Number(value) > range[1] ? 'alto' : 'bajo';
+  }
+
   isAbnormal(key) {
     return VitalSigns.isValueAbnormal(key, this[key]);
   }

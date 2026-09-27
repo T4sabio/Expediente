@@ -1,0 +1,186 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { ApiService } from '../src/services/ApiService.js';
+import { ApiError, ConflictError } from '../src/utils/errors.js';
+
+/**
+ * Cliente de Supabase simulado. `tables` mapea nombre de tabla a un valor fijo
+ * `{data, error}` o a una función que lo calcula (para simular RLS, conflictos,
+ * etc. según lo que la prueba necesite). Los métodos de encadenamiento
+ * (select/eq/is/order/...) no filtran nada de verdad: cada prueba configura
+ * directamente el resultado final que le interesa observar.
+ */
+function makeBuilder(getResult) {
+  const builder = {
+    select: () => builder, eq: () => builder, is: () => builder, order: () => builder,
+    limit: () => builder, single: () => builder, insert: () => builder, update: () => builder, or: () => builder,
+    then(resolve, reject) { Promise.resolve(getResult()).then(resolve, reject); }
+  };
+  return builder;
+}
+
+class MockSupabase {
+  constructor({ tables = {}, rpcs = {} } = {}) {
+    this.tables = tables;
+    this.rpcs = rpcs;
+    this.calls = { from: [], rpc: [], removedChannels: [] };
+  }
+  from(table) {
+    this.calls.from.push(table);
+    const cfg = this.tables[table];
+    const getResult = typeof cfg === 'function' ? cfg : () => cfg ?? { data: [], error: null };
+    return makeBuilder(getResult);
+  }
+  rpc(name, params) {
+    this.calls.rpc.push({ name, params });
+    const cfg = this.rpcs[name];
+    if (cfg === undefined) return Promise.resolve({ data: null, error: { code: 'PGRST202', message: `función ${name} no existe` } });
+    return Promise.resolve(typeof cfg === 'function' ? cfg(params) : cfg);
+  }
+  channel(name) {
+    const handlers = [];
+    const ch = { name, on: (...args) => { handlers.push(args); return ch; }, subscribe: () => ch, _handlers: handlers };
+    return ch;
+  }
+  removeChannel(ch) { this.calls.removedChannels.push(ch); }
+}
+
+/* ---------------------------- Búsqueda ---------------------------- */
+
+test('searchPatients: usa el RPC cuando existe y devuelve instancias de Patient', async () => {
+  const db = new MockSupabase({ rpcs: { buscar_pacientes: { data: [{ HC: '2026-1', Nombre_Completo: 'Ana' }], error: null } } });
+  const api = new ApiService(db);
+  const results = await api.searchPatients({ query: 'ana' });
+  assert.equal(results.length, 1);
+  assert.equal(results[0].constructor.name, 'Patient');
+  assert.equal(results[0].HC, '2026-1');
+});
+
+test('searchPatients: si el RPC no existe, cae al respaldo y avisa UNA vez (onDegraded)', async () => {
+  const db = new MockSupabase({ tables: { DB_Pacientes: { data: [{ HC: '2026-2', Nombre_Completo: 'Luis' }], error: null } } });
+  const degraded = [];
+  const api = new ApiService(db, { onDegraded: name => degraded.push(name) });
+  const r1 = await api.searchPatients({ query: 'luis' });
+  const r2 = await api.searchPatients({ query: 'luis' });
+  assert.equal(r1.length, 1);
+  assert.equal(r2.length, 1);
+  assert.deepEqual(degraded, ['buscar_pacientes']); // solo una vez, no una por búsqueda
+});
+
+test('searchPatients: un error de RPC que NO es "función faltante" se propaga (no se enmascara como respaldo)', async () => {
+  const db = new MockSupabase({ rpcs: { buscar_pacientes: { data: null, error: { code: '42501', message: 'permiso denegado' } } } });
+  const api = new ApiService(db);
+  await assert.rejects(() => api.searchPatients({ query: 'x' }), ApiError);
+});
+
+/* ---------------------------- Lectura de expediente (posible RLS) ---------------------------- */
+
+test('getPatientRecord: agrega las 7 tablas en un PatientRecord', async () => {
+  const db = new MockSupabase({
+    tables: {
+      DB_Pacientes: { data: { HC: '2026-1', Nombre_Completo: 'Ana', Servicio: 'UCI' }, error: null },
+      DB_SignosVitales: { data: [{ id: 1, PA_Sistolica: 120, PA_Diastolica: 80 }], error: null },
+      DB_Medicamentos: { data: [], error: null },
+      DB_Laboratorios: { data: [], error: null },
+      DB_Consultas: { data: [], error: null },
+      DB_Cultivos: { data: [], error: null },
+      DB_Pendientes: { data: [], error: null }
+    }
+  });
+  const api = new ApiService(db);
+  const record = await api.getPatientRecord('2026-1');
+  assert.equal(record.patient.Nombre_Completo, 'Ana');
+  assert.equal(record.vitals.length, 1);
+});
+
+test('getPatientRecord: paciente inexistente lanza un error legible', async () => {
+  const db = new MockSupabase({ tables: { DB_Pacientes: { data: null, error: null } } });
+  const api = new ApiService(db);
+  await assert.rejects(() => api.getPatientRecord('no-existe'), /No se encontró ningún paciente/);
+});
+
+test('getPatientRecord: un bloqueo de RLS en cualquier tabla hija falla en voz alta (no oculta datos)', async () => {
+  const db = new MockSupabase({
+    tables: {
+      DB_Pacientes: { data: { HC: '2026-1', Nombre_Completo: 'Ana' }, error: null },
+      DB_SignosVitales: { data: null, error: { code: '42501', message: 'permission denied for table DB_SignosVitales' } },
+      DB_Medicamentos: { data: [], error: null },
+      DB_Laboratorios: { data: [], error: null },
+      DB_Consultas: { data: [], error: null },
+      DB_Cultivos: { data: [], error: null },
+      DB_Pendientes: { data: [], error: null }
+    }
+  });
+  const api = new ApiService(db);
+  await assert.rejects(() => api.getPatientRecord('2026-1'), ApiError);
+});
+
+/* ---------------------------- Guardado ---------------------------- */
+
+test('createPatient: HC duplicado da un mensaje amigable (23505)', async () => {
+  const db = new MockSupabase({ tables: { DB_Pacientes: { data: null, error: { code: '23505', message: 'duplicate key' } } } });
+  const api = new ApiService(db);
+  await assert.rejects(() => api.createPatient({ toInsertRow: () => ({ HC: '2026-1' }) }), /Ya existe un paciente/);
+});
+
+test('addVitalSigns / addMedication: insertan sin lanzar cuando el servidor no reporta error', async () => {
+  const db = new MockSupabase({ tables: { DB_SignosVitales: { data: [{ id: 1 }], error: null } } });
+  const api = new ApiService(db);
+  const result = await api.addVitalSigns({ toRow: () => ({ HC: '2026-1', PA_Sistolica: 120 }) });
+  assert.equal(result[0].id, 1);
+});
+
+/* ---------------------------- Concurrencia (2.5) ---------------------------- */
+
+test('updatePatient: conflicto de edición concurrente cuando 0 filas cambian', async () => {
+  const db = new MockSupabase({ tables: { DB_Pacientes: { data: [], error: null } } });
+  const api = new ApiService(db);
+  await assert.rejects(
+    () => api.updatePatient('2026-1', { toUpdateRow: () => ({}) }, { expectedModificadoEn: '2026-01-01T00:00:00Z' }),
+    /Otra persona modificó este paciente/
+  );
+});
+
+test('completeTask: sin Modificado_En esperado, actualiza sin exigir coincidencia', async () => {
+  const db = new MockSupabase({ tables: { DB_Pendientes: { data: [{ id: 5 }], error: null } } });
+  const api = new ApiService(db);
+  const result = await api.completeTask(5);
+  assert.equal(result[0].id, 5);
+});
+
+test('completeTask: con Modificado_En esperado y 0 filas afectadas, lanza ConflictError (no sobrescribe en silencio)', async () => {
+  const db = new MockSupabase({ tables: { DB_Pendientes: { data: [], error: null } } });
+  const api = new ApiService(db);
+  await assert.rejects(() => api.completeTask(5, '2026-01-01T00:00:00Z'), ConflictError);
+});
+
+test('resolveCulture: conflicto también se detecta al registrar un resultado', async () => {
+  const db = new MockSupabase({ tables: { DB_Cultivos: { data: [], error: null } } });
+  const api = new ApiService(db);
+  await assert.rejects(
+    () => api.resolveCulture(9, 'Positivo', 'obs', '2026-01-01T00:00:00Z'),
+    err => err instanceof ConflictError && /cultivo/.test(err.message)
+  );
+});
+
+test('suspendMedication / answerConsultation: propagan errores de servidor como ApiError', async () => {
+  const db = new MockSupabase({
+    tables: {
+      DB_Medicamentos: { data: null, error: { message: 'boom' } },
+      DB_Consultas: { data: null, error: { message: 'boom' } }
+    }
+  });
+  const api = new ApiService(db);
+  await assert.rejects(() => api.suspendMedication(1), ApiError);
+  await assert.rejects(() => api.answerConsultation(1, 'ok'), ApiError);
+});
+
+/* ---------------------------- Tiempo real ---------------------------- */
+
+test('subscribeToPatient: se suscribe a las 7 tablas y la función de cancelación remueve el canal', () => {
+  const db = new MockSupabase();
+  const api = new ApiService(db);
+  const unsubscribe = api.subscribeToPatient('2026-1', () => {});
+  unsubscribe();
+  assert.equal(db.calls.removedChannels.length, 1);
+});

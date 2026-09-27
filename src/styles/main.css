@@ -25,3 +25,20 @@ table.clinical tbody tr:hover { background: #FAFCFC; }
 body.role-lectura [data-action="nuevo-paciente"],
 body.role-lectura [data-action="editar-paciente"],
 body.role-lectura form button[type="submit"] { display: none; }
+
+/* Exportar/imprimir expediente: se arma un contenedor temporal con todas las
+   secciones y se oculta el resto de la página mientras se imprime. */
+.print-only { display: none; }
+@media print {
+  body > *:not(.print-only) { display: none !important; }
+  .print-only { display: block !important; padding: 24px; color: #111; }
+  .print-section { break-inside: avoid; margin-bottom: 18px; }
+  .print-section-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+    margin-bottom: 8px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+  .print-only table.clinical { font-size: 11px; }
+}
+
+/* Validación en tiempo real de formularios: el campo específico se marca en
+   rojo con un mensaje justo debajo (ver src/views/formValidation.js). */
+.field-invalid { border-color: #C0392B !important; }
+.field-error-msg:empty { display: none; }

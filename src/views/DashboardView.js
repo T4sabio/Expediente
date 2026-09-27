@@ -16,6 +16,7 @@ export class DashboardView {
       servicio: $('servicioFilter'), sideRail: $('sideRail'), mobileRail: $('mobileRail'),
       empty: $('emptyState'), patientView: $('patientView'), header: $('patientHeader'),
       section: $('sectionContainer'), labTypes: $('tipoLabList'),
+      searchSpinner: $('searchSpinner'), searchStatus: $('searchStatus'),
       login: $('loginScreen'), loginError: $('loginError'), loginSubtitle: $('loginSubtitle'),
       loginNombreLabel: $('loginNombreLabel'), toggleSignupBtn: $('toggleSignupBtn'),
       userBadge: $('userBadge'), userNombre: $('userNombre'), userRol: $('userRol')
@@ -92,6 +93,12 @@ export class DashboardView {
     this.#el.results.classList.add('hidden');
     this.#el.results.innerHTML = '';
   }
+
+  showSearchSpinner() { this.#el.searchSpinner.classList.remove('hidden'); }
+  hideSearchSpinner() { this.#el.searchSpinner.classList.add('hidden'); }
+
+  /** Región aria-live oculta: anuncia el resultado de la búsqueda para lectores de pantalla. */
+  announceSearchStatus(text) { this.#el.searchStatus.textContent = text; }
 
   /* ---- navegación ---- */
   buildRail(sections) {

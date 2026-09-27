@@ -44,6 +44,23 @@ export const VITAL_LABELS = Object.freeze({
 
 export const PROLONGED_TREATMENT_DAYS = 14;
 
+/**
+ * Límites de longitud para campos de texto libre. Existen por dos razones:
+ * 1) Un campo sin límite visible invita a pegar documentos completos, lo que
+ *    vuelve el expediente difícil de escanear rápido durante una ronda.
+ * 2) Deben coincidir con los `check` de longitud del lado del servidor
+ *    (ver supabase/004_correcciones_produccion.sql) para que el mensaje de
+ *    error aparezca ANTES de enviar el formulario, no después.
+ */
+export const FIELD_LIMITS = Object.freeze({
+  Nombre_Completo: 200,
+  Servicio: 100,
+  Cama: 20,
+  Num_RayosX: 50,
+  Motivo_Consulta: 1000,
+  Diagnosticos: 4000
+});
+
 export const SEARCH = Object.freeze({ DEBOUNCE_MS: 250, MAX_RESULTS: 30 });
 
 export const DEFAULT_AGE_UNIT = 'años';

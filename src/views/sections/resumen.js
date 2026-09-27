@@ -1,6 +1,6 @@
 import { VITAL_RANGES, VITAL_LABELS } from '../../utils/constants.js';
-import { escapeHtml as esc, fmtDateTime, fmtDate, orDash } from '../../utils/formatters.js';
-import { summaryPanel } from '../components.js';
+import { escapeHtml as esc, fmtDateTime, fmtDate, fmtRelative, orDash } from '../../utils/formatters.js';
+import { summaryPanel, abnormalMark } from '../components.js';
 
 export const resumenSection = {
   id: 'resumen',
@@ -13,7 +13,7 @@ export const resumenSection = {
           const flag = last.isAbnormal(key);
           return `<div class="rounded-lg border ${flag ? 'border-critical/40 bg-critical-soft' : 'border-hairline bg-white'} p-3">
             <div class="text-[11px] text-[#5C6B67]">${VITAL_LABELS[key]}</div>
-            <div class="text-lg font-mono-data font-semibold ${flag ? 'text-critical' : 'text-ink'}">${esc(orDash(last[key]))}</div>
+            <div class="text-lg font-mono-data font-semibold ${flag ? 'text-critical' : 'text-ink'}">${esc(orDash(last[key]))}${abnormalMark(key, last[key])}</div>
           </div>`;
         }).join('')
       : '<p class="text-sm text-[#5C6B67]">Sin registros de signos vitales.</p>';
@@ -26,7 +26,7 @@ export const resumenSection = {
     return `
       <div class="flex items-center justify-between mb-3">
         <h2 class="font-semibold text-[15px]">Resumen clínico</h2>
-        ${last ? `<span class="text-xs text-[#5C6B67]">Última toma: ${fmtDateTime(last.Fecha_Hora)}</span>` : ''}
+        ${last ? `<span class="text-xs text-[#5C6B67]" title="${esc(fmtDateTime(last.Fecha_Hora))}">Última toma: ${esc(fmtRelative(last.Fecha_Hora))}</span>` : ''}
       </div>
       <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 mb-6">${vitalCards}</div>
       <div class="grid md:grid-cols-3 gap-4">

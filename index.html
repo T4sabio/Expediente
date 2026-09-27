@@ -58,11 +58,18 @@
       </div>
 
       <div class="flex-1 min-w-[220px] relative">
+        <label for="patientSearch" class="sr-only">Buscar paciente por nombre o historia clínica</label>
         <div class="relative">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" class="absolute left-3 top-1/2 -translate-y-1/2 opacity-60"><circle cx="11" cy="11" r="7" stroke="white" stroke-width="2"/><line x1="20" y1="20" x2="16.5" y2="16.5" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" class="absolute left-3 top-1/2 -translate-y-1/2 opacity-60" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="white" stroke-width="2"/><line x1="20" y1="20" x2="16.5" y2="16.5" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>
           <input id="patientSearch" type="text" autocomplete="off" placeholder="Buscar por nombre o HC (ej. 2026-37294)…"
-            class="w-full bg-white/10 border border-white/15 text-white placeholder-white/50 text-sm rounded-md pl-9 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent focus:bg-ink">
+            aria-describedby="searchStatus"
+            class="w-full bg-white/10 border border-white/15 text-white placeholder-white/50 text-sm rounded-md pl-9 pr-9 py-2 focus:outline-none focus:ring-2 focus:ring-accent focus:bg-ink">
+          <svg id="searchSpinner" class="hidden animate-spin absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 opacity-70" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" stroke="white" stroke-width="2.5" opacity="0.25"/>
+            <path d="M21 12a9 9 0 0 0-9-9" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+          </svg>
         </div>
+        <span id="searchStatus" class="sr-only" role="status" aria-live="polite"></span>
         <div id="searchResults" class="hidden absolute left-0 right-0 mt-1.5 bg-white text-[#17211F] rounded-lg shadow-xl border border-hairline max-h-80 overflow-y-auto z-50"></div>
       </div>
 
@@ -79,6 +86,10 @@
 
       <button id="refreshBtn" data-action="refresh" title="Actualizar datos del paciente" class="p-2 rounded-md bg-white/10 hover:bg-white/20 transition">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M3 12a9 9 0 0 1 15.3-6.5M21 12a9 9 0 0 1-15.3 6.5" stroke="white" stroke-width="2" stroke-linecap="round"/><path d="M18 3v4h-4M6 21v-4h4" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+
+      <button data-action="imprimir-expediente" title="Imprimir o exportar a PDF el expediente" class="p-2 rounded-md bg-white/10 hover:bg-white/20 transition">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2M6 14h12v7H6z" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
 
       <div id="userBadge" class="hidden items-center gap-2 pl-2 border-l border-white/15">
@@ -122,8 +133,8 @@
     </main>
   </div>
 
-  <!-- ============ TOAST ============ -->
-  <div id="toast" class="hidden fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium text-white fade-in"></div>
+  <!-- ============ TOASTS (apilables, con aria-live) ============ -->
+  <div id="toast" class="hidden fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2"></div>
 
   <!-- ================================================================
        MODALES DE CAPTURA
@@ -338,25 +349,25 @@
           </div>
         </label>
         <label class="col-span-2 text-xs text-[#5C6B67]">Nombre completo
-          <input required name="Nombre_Completo" type="text" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+          <input required name="Nombre_Completo" type="text" maxlength="200" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
         </label>
         <label class="text-xs text-[#5C6B67]">Servicio
-          <input required name="Servicio" type="text" placeholder="Ej. Neurocirugía" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+          <input required name="Servicio" type="text" placeholder="Ej. Neurocirugía" maxlength="100" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
         </label>
         <label class="text-xs text-[#5C6B67]">Cama
-          <input name="Cama" type="text" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+          <input name="Cama" type="text" maxlength="20" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
         </label>
         <label class="text-xs text-[#5C6B67]">Fecha de ingreso
           <input name="Fecha_Ingreso" type="date" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
         </label>
         <label class="text-xs text-[#5C6B67]">No. Rayos X
-          <input name="Num_RayosX" type="text" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+          <input name="Num_RayosX" type="text" maxlength="50" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
         </label>
         <label class="col-span-2 text-xs text-[#5C6B67]">Motivo de consulta
-          <textarea name="Motivo_Consulta" rows="2" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm"></textarea>
+          <textarea name="Motivo_Consulta" rows="2" maxlength="1000" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm"></textarea>
         </label>
         <label class="col-span-2 text-xs text-[#5C6B67]">Diagnósticos / problemas
-          <textarea name="Diagnosticos" rows="4" placeholder="1. …&#10;1.1. …" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm font-mono-data"></textarea>
+          <textarea name="Diagnosticos" rows="4" maxlength="4000" placeholder="1. …&#10;1.1. …" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm font-mono-data"></textarea>
         </label>
       </div>
       <div class="flex justify-end gap-2 mt-5">
@@ -386,25 +397,25 @@
           </div>
         </label>
         <label class="col-span-2 text-xs text-[#5C6B67]">Nombre completo
-          <input required name="Nombre_Completo" type="text" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+          <input required name="Nombre_Completo" type="text" maxlength="200" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
         </label>
         <label class="text-xs text-[#5C6B67]">Servicio
-          <input required name="Servicio" type="text" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+          <input required name="Servicio" type="text" maxlength="100" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
         </label>
         <label class="text-xs text-[#5C6B67]">Cama
-          <input name="Cama" type="text" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+          <input name="Cama" type="text" maxlength="20" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
         </label>
         <label class="text-xs text-[#5C6B67]">Fecha de ingreso
           <input name="Fecha_Ingreso" type="date" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
         </label>
         <label class="text-xs text-[#5C6B67]">No. Rayos X
-          <input name="Num_RayosX" type="text" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+          <input name="Num_RayosX" type="text" maxlength="50" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
         </label>
         <label class="col-span-2 text-xs text-[#5C6B67]">Motivo de consulta
-          <textarea name="Motivo_Consulta" rows="2" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm"></textarea>
+          <textarea name="Motivo_Consulta" rows="2" maxlength="1000" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm"></textarea>
         </label>
         <label class="col-span-2 text-xs text-[#5C6B67]">Diagnósticos / problemas
-          <textarea name="Diagnosticos" rows="4" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm font-mono-data"></textarea>
+          <textarea name="Diagnosticos" rows="4" maxlength="4000" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm font-mono-data"></textarea>
         </label>
       </div>
       <div class="flex items-center justify-between gap-2 mt-5">

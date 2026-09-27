@@ -5,6 +5,8 @@ import { VitalSigns } from '../models/VitalSigns.js';
 import { Medication } from '../models/Medication.js';
 import { LabResult, Consultation, Culture, PendingTask } from '../models/ClinicalRecords.js';
 import { sectionViewFor } from '../views/sections/index.js';
+import { ConflictError, isNetworkError } from '../utils/errors.js';
+import { reportError } from '../utils/errorReporter.js';
 
 /**
  * Orquestador: escucha eventos del DOM (delegación por data-action), llama al ApiService,
@@ -20,6 +22,9 @@ export class DashboardController {
   #submitHandlers;
   #signupMode = false;
   #pendingDelete = null; // { hc, nombre } — paciente a confirmar en modal-eliminar-paciente
+  #pendingEditModificadoEn = null; // sello de la última edición conocida, para detectar conflictos
+  #unsubscribeRealtime = null;
+  #realtimeDebounce = null;
 
   constructor({ api, auth, state, view, modals, toast, charts }) {
     this.#api = api; this.#auth = auth; this.#state = state; this.#view = view;
@@ -34,11 +39,16 @@ export class DashboardController {
       'nuevo-paciente': () => this.#modals.open('modal-nuevo-paciente', { Edad_Unidad: this.#state.get().lastAgeUnit }),
       'editar-paciente': () => this.#openEditPatient(),
       'pedir-eliminar-paciente': () => this.#openDeleteConfirm(),
-      'suspender-med': el => this.#quickAction(() => this.#api.suspendMedication(Number(el.dataset.id)), 'Medicamento suspendido'),
-      'completar-pendiente': el => this.#quickAction(() => this.#api.completeTask(Number(el.dataset.id)), 'Pendiente marcado como realizado'),
+      'suspender-med': el => this.#quickActionOptimistic('medications', Number(el.dataset.id),
+        { Activo: 'No', Fecha_Omision: todayISODate() },
+        expected => this.#api.suspendMedication(Number(el.dataset.id), expected), 'Medicamento suspendido'),
+      'completar-pendiente': el => this.#quickActionOptimistic('tasks', Number(el.dataset.id),
+        { Estado: 'Realizado', Fecha_Completado: new Date().toISOString() },
+        expected => this.#api.completeTask(Number(el.dataset.id), expected), 'Pendiente marcado como realizado'),
       'responder-consulta': el => this.#modals.open('modal-responder', { _row: el.dataset.id }),
       'resultado-cultivo': el => this.#modals.open('modal-resultado-cultivo', { _row: el.dataset.id }),
       'cerrar-sesion': () => this.#signOut(),
+      'imprimir-expediente': () => this.#printRecord(),
       'toggle-signup': () => { this.#signupMode = !this.#signupMode; this.#view.setSignupMode(this.#signupMode); }
     };
 
@@ -52,9 +62,11 @@ export class DashboardController {
       'form-cultivo': record('modal-cultivo', (f, hc) => Culture.fromForm(f, hc), e => this.#api.addCulture(e), 'Cultivo enviado a microbiología'),
       'form-pendiente': record('modal-pendiente', (f, hc) => PendingTask.fromForm(f, hc), e => this.#api.addTask(e), 'Tarea pendiente agregada'),
       'form-responder': form => this.#submitSimple(form, 'modal-responder', 'Respuesta registrada', f =>
-        this.#api.answerConsultation(Number(f._row), String(f.Respuesta_Departamento).trim())),
+        this.#api.answerConsultation(Number(f._row), String(f.Respuesta_Departamento).trim(),
+          this.#findItem('consultations', Number(f._row))?.Modificado_En)),
       'form-resultado-cultivo': form => this.#submitSimple(form, 'modal-resultado-cultivo', 'Resultado de cultivo registrado', f =>
-        this.#api.resolveCulture(Number(f._row), f.Resultado, String(f.Observaciones_Microbiologia ?? '').trim())),
+        this.#api.resolveCulture(Number(f._row), f.Resultado, String(f.Observaciones_Microbiologia ?? '').trim(),
+          this.#findItem('cultures', Number(f._row))?.Modificado_En)),
       'form-nuevo-paciente': form => this.#createPatient(form),
       'form-editar-paciente': form => this.#updatePatient(form),
       'form-eliminar-paciente': form => this.#confirmDeletePatient(form),
@@ -98,6 +110,7 @@ export class DashboardController {
 
   #onSignedOut() {
     this.#loadSeq++; this.#searchSeq++;
+    this.#stopRealtime();
     this.#state.set({ authed: false, record: null, currentHC: null, searchResults: null, servicios: [] });
     this.#view.hideUser();
     this.#view.setSearchText('');
@@ -123,6 +136,37 @@ export class DashboardController {
 
   async #signOut() {
     try { await this.#auth.signOut(); } catch (err) { this.#toast.show(err.message, 'error'); }
+  }
+
+  /**
+   * Arma una vista imprimible con TODAS las secciones (no solo la activa) y
+   * dispara el diálogo de impresión del navegador (de ahí puede guardarse como PDF).
+   * No usa una librería nueva: aprovecha el mismo render() de cada sección.
+   */
+  #printRecord() {
+    const { record } = this.#state.get();
+    if (!record) { this.#toast.show('Selecciona un paciente primero.', 'error'); return; }
+    const g = record.patient;
+    const ctx = { charts: { render() {}, destroy() {} }, today: todayISODate() };
+    const body = SECTIONS.map(s => {
+      const html = sectionViewFor(s.id).render(record, ctx);
+      return `<section class="print-section"><h2 class="print-section-title">${s.label}</h2>${html}</section>`;
+    }).join('');
+
+    const container = document.createElement('div');
+    container.className = 'print-only';
+    container.innerHTML = `
+      <div style="margin-bottom:20px;">
+        <div style="font-size:11px;color:#666;">HC ${g.HC} · Impreso ${new Date().toLocaleString('es-GT')}</div>
+        <h1 style="font-size:18px;font-weight:700;">${g.Nombre_Completo}</h1>
+        <div style="font-size:12px;color:#444;">${g.Servicio || '—'} · Cama ${g.Cama || '—'} · ${g.Edad || ''}</div>
+      </div>
+      ${body}`;
+    document.body.appendChild(container);
+
+    const cleanup = () => { container.remove(); window.removeEventListener('afterprint', cleanup); };
+    window.addEventListener('afterprint', cleanup);
+    window.print();
   }
 
   #bindEvents() {
@@ -211,16 +255,23 @@ export class DashboardController {
     const seq = ++this.#searchSeq;
     if (!query && !servicio) {
       this.#state.set({ searchResults: null });
+      this.#view.hideSearchSpinner();
       return null;
     }
+    this.#view.showSearchSpinner();
     try {
       const results = await this.#api.searchPatients({ query, servicio });
       if (seq !== this.#searchSeq) return null;
       this.#state.set({ searchResults: results });
+      this.#view.announceSearchStatus(
+        results.length ? `${results.length} paciente${results.length === 1 ? '' : 's'} encontrado${results.length === 1 ? '' : 's'}.` : 'Sin resultados.'
+      );
       return results;
     } catch (err) {
       if (seq === this.#searchSeq) this.#toast.show('Error en la búsqueda: ' + err.message, 'error');
       return null;
+    } finally {
+      if (seq === this.#searchSeq) this.#view.hideSearchSpinner();
     }
   }
 
@@ -256,11 +307,33 @@ export class DashboardController {
       const record = await this.#api.getPatientRecord(hc);
       if (seq !== this.#loadSeq) return;
       this.#state.set({ record, currentHC: hc });
+      if (!silent) this.#watchRealtime(hc);
     } catch (err) {
       if (seq !== this.#loadSeq) return;
       this.#toast.show('Error al cargar el paciente: ' + err.message, 'error');
       if (!silent) { this.#state.set({ currentHC: null }); this.#view.showEmptyState(); }
     }
+  }
+
+  /**
+   * Si alguien más (otra pestaña, otra persona) registra algo del mismo paciente,
+   * el expediente se refresca solo — ya no hace falta pulsar "Actualizar" a mano.
+   */
+  #watchRealtime(hc) {
+    this.#stopRealtime();
+    this.#unsubscribeRealtime = this.#api.subscribeToPatient(hc, () => {
+      clearTimeout(this.#realtimeDebounce);
+      // Pequeño debounce: un solo guardado puede disparar varios eventos (INSERT + UPDATE de auditoría).
+      this.#realtimeDebounce = setTimeout(() => {
+        if (this.#state.get().currentHC === hc) this.loadPatient(hc, { silent: true });
+      }, 400);
+    });
+  }
+
+  #stopRealtime() {
+    clearTimeout(this.#realtimeDebounce);
+    this.#unsubscribeRealtime?.();
+    this.#unsubscribeRealtime = null;
   }
 
   switchSection(id) {
@@ -287,7 +360,8 @@ export class DashboardController {
     try {
       await task();
     } catch (err) {
-      this.#toast.show(err.message, 'error');
+      this.#toast.show(this.#friendlyErrorMessage(err), 'error');
+      if (!(err instanceof ConflictError)) reportError(err, { action: 'form', formId: form.id });
     } finally {
       btn.disabled = false;
       btn.textContent = label;
@@ -303,21 +377,77 @@ export class DashboardController {
     await this.#reload();
   }
 
+  /** Busca un elemento por id dentro de una lista del expediente abierto (medications, tasks, ...). */
+  #findItem(listKey, id) {
+    return this.#state.get().record?.[listKey]?.find(item => item.id === id) ?? null;
+  }
+
   async #submitSimple(form, modalId, message, save) {
-    await save(this.#modals.readForm(form));
+    try {
+      await save(this.#modals.readForm(form));
+    } catch (err) {
+      if (err instanceof ConflictError) {
+        // No se cierra el modal ni se pierde lo escrito: la persona ve el error,
+        // puede revisar el expediente ya actualizado y decidir si reintenta.
+        await this.#reload();
+      }
+      throw err;
+    }
     this.#modals.close(modalId);
     this.#toast.show(message);
     await this.#reload();
   }
 
+  /**
+   * Como #quickActionOptimistic, pero sin actualización optimista: espera la
+   * respuesta del servidor antes de avisar. Se conserva para acciones que no
+   * necesitan sentirse instantáneas.
+   */
   async #quickAction(task, message) {
     try {
       await task();
       this.#toast.show(message);
       await this.#reload();
     } catch (err) {
-      this.#toast.show(err.message, 'error');
+      this.#toast.show(this.#friendlyErrorMessage(err), 'error');
+      reportError(err, { action: 'quickAction' });
     }
+  }
+
+  /**
+   * Actualiza la UI de inmediato (sin esperar la red ni recargar todo el
+   * expediente) y revierte solo si la petición falla. `listKey` es la lista
+   * del PatientRecord a parchar ('medications', 'tasks', ...). `apiCall` recibe
+   * el `Modificado_En` que tenía el elemento ANTES del parche optimista, para
+   * que el servidor pueda detectar si alguien más lo cambió mientras tanto.
+   */
+  async #quickActionOptimistic(listKey, id, patch, apiCall, message) {
+    const { record } = this.#state.get();
+    if (!record) return;
+    const previous = record;
+    const expected = this.#findItem(listKey, id)?.Modificado_En;
+    this.#state.set({ record: record.withPatchedItem(listKey, id, patch) });
+    try {
+      await apiCall(expected);
+      this.#toast.show(message);
+    } catch (err) {
+      // Revierte al estado anterior: la persona ve exactamente lo que había antes del intento.
+      if (this.#state.get().record !== previous) this.#state.set({ record: previous });
+      if (err instanceof ConflictError) {
+        this.#toast.show(err.message, 'error');
+        await this.#reload(); // la versión que tenía la persona ya no es la vigente
+      } else {
+        this.#toast.show('No se pudo guardar: ' + this.#friendlyErrorMessage(err), 'error');
+        reportError(err, { action: 'quickActionOptimistic', listKey });
+      }
+    }
+  }
+
+  /** Mensaje mostrado a la persona: distingue "sin conexión" de un error de negocio/servidor. */
+  #friendlyErrorMessage(err) {
+    return isNetworkError(err)
+      ? 'Sin conexión a internet. Revisa tu red e inténtalo de nuevo; nada se guardó.'
+      : err.message;
   }
 
   async #createPatient(form) {
@@ -337,6 +467,7 @@ export class DashboardController {
     if (!record) return;
     const g = record.patient;
     const age = g.age(lastAgeUnit);
+    this.#pendingEditModificadoEn = g.Modificado_En ?? null;
     this.#modals.open('modal-editar-paciente', {
       _row: g.HC, HC: g.HC, Edad: age.valor, Edad_Unidad: age.unidad,
       Nombre_Completo: g.Nombre_Completo, Servicio: g.Servicio, Cama: g.Cama,
@@ -349,7 +480,14 @@ export class DashboardController {
     const f = this.#modals.readForm(form);
     this.#state.set({ lastAgeUnit: f.Edad_Unidad || DEFAULT_AGE_UNIT });
     const patient = Patient.fromForm(f).validate({ requireHC: false });
-    await this.#api.updatePatient(f._row, patient);
+    try {
+      await this.#api.updatePatient(f._row, patient, { expectedModificadoEn: this.#pendingEditModificadoEn });
+    } catch (err) {
+      // Conflicto de edición concurrente: NO se cierra el modal ni se pierde lo escrito;
+      // la persona decide si recarga (perdiendo su cambio) o reintenta tras revisar.
+      this.#toast.show(err.message, 'error');
+      return;
+    }
     this.#modals.close('modal-editar-paciente');
     this.#toast.show('Datos del paciente actualizados');
     this.#refreshServicios();
@@ -380,6 +518,7 @@ export class DashboardController {
     try {
       await this.#api.deletePatient(f._row);
       this.#pendingDelete = null;
+      this.#stopRealtime();
       this.#modals.close('modal-eliminar-paciente');
       this.#modals.close('modal-editar-paciente');
       this.#toast.show('Paciente eliminado (puede restaurarse desde la base de datos si fue un error)');

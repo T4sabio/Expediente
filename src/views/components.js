@@ -40,13 +40,27 @@ export function badge(text, tone) {
 export function summaryPanel(title, count, items, gotoSection) {
   const list = items.slice(0, 3).map(i => `<li class="text-xs text-[#5C6B67] truncate">· ${esc(i)}</li>`).join('')
     || '<li class="text-xs text-[#9AA6A2]">Sin datos</li>';
-  return `<div data-action="switch-section" data-section="${esc(gotoSection)}" class="rounded-lg border border-hairline bg-white p-4 cursor-pointer hover:border-accent transition">
+  return `<button type="button" data-action="switch-section" data-section="${esc(gotoSection)}"
+    class="text-left w-full rounded-lg border border-hairline bg-white p-4 cursor-pointer hover:border-accent focus:outline-none focus:ring-2 focus:ring-accent transition">
     <div class="flex items-baseline justify-between">
       <span class="text-sm text-[#3C4A46]">${esc(title)}</span>
       <span class="text-2xl font-mono-data font-semibold text-ink">${count}</span>
     </div>
     <ul class="mt-2 space-y-1">${list}</ul>
-  </div>`;
+  </button>`;
 }
 
+/** Clase CSS para el valor (color) — se usa junto con abnormalMark(), nunca solo el color. */
 export const cellFlag = (key, val) => (VitalSigns.isValueAbnormal(key, val) ? 'text-critical font-semibold' : '');
+
+/**
+ * Marca textual/icónica de un valor fuera de rango (▲ alto / ▼ bajo), para que no
+ * dependa únicamente del color (daltonismo). Devuelve '' si el valor es normal.
+ */
+export function abnormalMark(key, val) {
+  if (!VitalSigns.isValueAbnormal(key, val)) return '';
+  const dir = VitalSigns.abnormalDirection ? VitalSigns.abnormalDirection(key, val) : null;
+  const arrow = dir === 'bajo' ? '▼' : dir === 'alto' ? '▲' : '⚠';
+  const label = dir ? (dir === 'bajo' ? 'bajo' : 'alto') : 'anormal';
+  return ` <span class="text-critical text-[11px] font-semibold" aria-label="${label}" title="${label}">${arrow}</span>`;
+}
