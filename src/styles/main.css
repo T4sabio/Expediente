@@ -38,6 +38,11 @@ body.role-lectura form button[type="submit"] { display: none; }
   .print-only table.clinical { font-size: 11px; }
 }
 
+.print-header { margin-bottom: 20px; }
+.print-header .print-meta { font-size: 11px; color: #666; }
+.print-header .print-name { font-size: 18px; font-weight: 700; }
+.print-header .print-subline { font-size: 12px; color: #444; }
+
 /* Validación en tiempo real de formularios: el campo específico se marca en
    rojo con un mensaje justo debajo (ver src/views/formValidation.js). */
 .field-invalid { border-color: #C0392B !important; }

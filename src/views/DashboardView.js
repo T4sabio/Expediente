@@ -133,8 +133,41 @@ export class DashboardView {
 
   showPatientLoading() {
     this.showPatientView();
-    this.#el.header.innerHTML = '<p class="text-sm text-[#5C6B67]">Cargando expediente…</p>';
-    this.#el.section.innerHTML = '';
+    this.#el.header.innerHTML = `
+      <div class="animate-pulse" aria-hidden="true">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div class="min-w-[240px] space-y-2">
+            <div class="h-3 w-40 bg-[#EEF2F1] rounded"></div>
+            <div class="h-5 w-56 bg-[#EEF2F1] rounded"></div>
+            <div class="h-3 w-72 bg-[#EEF2F1] rounded"></div>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <div class="h-7 w-20 bg-[#EEF2F1] rounded-md"></div>
+            <div class="h-7 w-16 bg-[#EEF2F1] rounded-md"></div>
+            <div class="h-7 w-20 bg-[#EEF2F1] rounded-md"></div>
+          </div>
+        </div>
+      </div>`;
+    // Skeleton genérico de la sección: sugiere tarjetas de signos vitales / filas de tabla
+    // mientras carga, en vez de un spinner sin forma (percepción de espera más corta).
+    this.#el.section.innerHTML = `
+      <div class="animate-pulse space-y-4" aria-hidden="true">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+          ${Array.from({ length: 4 }, () => `
+            <div class="border border-hairline rounded-lg p-3 space-y-2">
+              <div class="h-3 w-16 bg-[#EEF2F1] rounded"></div>
+              <div class="h-5 w-12 bg-[#EEF2F1] rounded"></div>
+            </div>`).join('')}
+        </div>
+        <div class="border border-hairline rounded-lg divide-y divide-[#EEF2F1]">
+          ${Array.from({ length: 5 }, () => `
+            <div class="h-9 flex items-center gap-3 px-3">
+              <div class="h-3 w-24 bg-[#EEF2F1] rounded"></div>
+              <div class="h-3 w-16 bg-[#EEF2F1] rounded"></div>
+              <div class="h-3 flex-1 bg-[#EEF2F1] rounded"></div>
+            </div>`).join('')}
+        </div>
+      </div>`;
   }
 
   renderHeader(g) {

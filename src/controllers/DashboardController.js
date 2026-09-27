@@ -156,10 +156,10 @@ export class DashboardController {
     const container = document.createElement('div');
     container.className = 'print-only';
     container.innerHTML = `
-      <div style="margin-bottom:20px;">
-        <div style="font-size:11px;color:#666;">HC ${g.HC} · Impreso ${new Date().toLocaleString('es-GT')}</div>
-        <h1 style="font-size:18px;font-weight:700;">${g.Nombre_Completo}</h1>
-        <div style="font-size:12px;color:#444;">${g.Servicio || '—'} · Cama ${g.Cama || '—'} · ${g.Edad || ''}</div>
+      <div class="print-header">
+        <div class="print-meta">HC ${g.HC} · Impreso ${new Date().toLocaleString('es-GT')}</div>
+        <h1 class="print-name">${g.Nombre_Completo}</h1>
+        <div class="print-subline">${g.Servicio || '—'} · Cama ${g.Cama || '—'} · ${g.Edad || ''}</div>
       </div>
       ${body}`;
     document.body.appendChild(container);
