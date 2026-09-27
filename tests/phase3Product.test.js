@@ -76,3 +76,12 @@ test('fase 3: pgTAP cubre las nuevas RPC y los índices de actividad', () => {
   assert.match(sql, /select has_function\('public', 'timeline_paciente'/);
   assert.match(sql, /idx_pacientes_ronda_servicio_cama/);
 });
+
+test('build: usa codeSplitting de Rolldown y no la forma objeto obsoleta de manualChunks', () => {
+  const config = read('vite.config.js');
+  assert.match(config, /rolldownOptions/);
+  assert.match(config, /codeSplitting/);
+  assert.match(config, /name: 'supabase'/);
+  assert.doesNotMatch(config, /manualChunks\s*:/);
+  assert.doesNotMatch(config, /rollupOptions\s*:/);
+});

@@ -161,3 +161,5 @@ La versión de Fase 3 añade:
 `000_schema.sql` → `001_search_and_indexes.sql` → `002_auth_rls_audit.sql` → `003_realtime.sql` → `004_correcciones_produccion.sql` → `005_pam_antibioticos_cultivos_periodicos.sql` → `006_hardening_produccion.sql` → `007_phase2_performance.sql` → `008_phase3_product.sql`.
 
 Las pruebas de base de datos de Fase 3 están en `supabase/tests/database/phase3_test.sql` y deben ejecutarse mediante `supabase test db` en CI.
+
+- **Build Vite 8/Rolldown:** la segmentación manual usa `build.rolldownOptions.output.codeSplitting`; no se utiliza la forma objeto obsoleta de `manualChunks`.

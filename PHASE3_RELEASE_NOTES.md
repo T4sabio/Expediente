@@ -40,3 +40,10 @@ También se agregaron índices específicos de actividad y navegación.
 ## Nota de privacidad
 
 Las preferencias y la marca de revisión de novedades no guardan HC ni contenido clínico en localStorage; la clave del expediente se utiliza únicamente como hash no reversible para separar preferencias locales.
+
+
+### Hotfix Vercel / Vite 8 (27-09-2026)
+
+Vercel está resolviendo Vite 8.3.1, basado en Rolldown. La forma objeto de `output.manualChunks` ya no es compatible en Vite 8 y provocaba el error `TypeError: manualChunks is not a function`. Se migró `vite.config.js` a `build.rolldownOptions.output.codeSplitting.groups`, manteniendo chunks dedicados para Supabase y Chart.js y un grupo vendor como fallback.
+
+La documentación actual de Vite/Rolldown recomienda `codeSplitting` y declara obsoleta la forma objeto de `manualChunks`.
