@@ -18,8 +18,7 @@ export class DashboardView {
       empty: $('emptyState'), patientView: $('patientView'), header: $('patientHeader'),
       section: $('sectionContainer'), labTypes: $('tipoLabList'),
       searchSpinner: $('searchSpinner'), searchStatus: $('searchStatus'), round: $('roundContainer'),
-      login: $('loginScreen'), loginError: $('loginError'), loginSubtitle: $('loginSubtitle'),
-      loginNombreLabel: $('loginNombreLabel'), toggleSignupBtn: $('toggleSignupBtn'),
+      login: $('loginScreen'), loginError: $('loginError'),
       userBadge: $('userBadge'), userNombre: $('userNombre'), userRol: $('userRol')
     };
   }
@@ -33,15 +32,6 @@ export class DashboardView {
     this.#el.loginError.classList.remove('hidden');
   }
   clearLoginError() { this.#el.loginError.classList.add('hidden'); }
-
-  setSignupMode(isSignup) {
-    this.#el.loginSubtitle.textContent = isSignup
-      ? 'Crea tu cuenta de personal. Quedará en modo solo lectura hasta que un médico te asigne rol.'
-      : 'Inicia sesión con tu cuenta de personal para ver el expediente clínico.';
-    this.#el.loginNombreLabel.classList.toggle('hidden', !isSignup);
-    this.#el.loginNombreLabel.querySelector('input').required = isSignup;
-    this.#el.toggleSignupBtn.textContent = isSignup ? '¿Ya tienes cuenta? Inicia sesión' : '¿Personal nuevo? Crear una cuenta';
-  }
 
   ROLE_LABELS = { medico: 'Médico', enfermeria: 'Enfermería', lectura: 'Solo lectura' };
 

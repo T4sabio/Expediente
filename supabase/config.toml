@@ -24,6 +24,11 @@ port = 54324
 enabled = true
 site_url = "http://127.0.0.1:4173"
 additional_redirect_urls = ["http://127.0.0.1:4173/**"]
+enable_signup = false
+
+[auth.email]
+enable_signup = false
+enable_confirmations = true
 
 [realtime]
 enabled = true

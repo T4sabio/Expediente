@@ -30,7 +30,7 @@
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 12h4l2 7 4-14 2 7h6" stroke="#1F8C74" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <h1 class="font-semibold text-[15px]">Ronda Clínica</h1>
       </div>
-      <p id="loginSubtitle" class="text-xs text-[#5C6B67] mb-4">Inicia sesión con tu cuenta de personal para ver el expediente clínico.</p>
+      <p class="text-xs text-[#5C6B67] mb-4">Inicia sesión con una cuenta de personal autorizada.</p>
       <div id="loginError" class="hidden text-xs text-critical bg-critical-soft rounded-md px-3 py-2 mb-3" role="alert" aria-live="assertive"></div>
       <div class="grid grid-cols-1 gap-3">
         <label class="text-xs text-[#5C6B67]">Correo institucional
@@ -39,13 +39,9 @@
         <label class="text-xs text-[#5C6B67]">Contraseña
           <input required name="password" type="password" autocomplete="current-password" minlength="6" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
         </label>
-        <label id="loginNombreLabel" class="hidden text-xs text-[#5C6B67]">Nombre completo
-          <input name="nombre" type="text" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
-        </label>
       </div>
       <button type="submit" class="mt-4 w-full px-4 py-2 text-sm rounded-md bg-accent text-white font-medium">Iniciar sesión</button>
-      <button type="button" id="toggleSignupBtn" data-action="toggle-signup" class="mt-3 w-full text-xs text-[#5C6B67] hover:underline">¿Personal nuevo? Crear una cuenta</button>
-      <p class="mt-3 text-[11px] text-[#9AA6A2] leading-relaxed">La sesión se bloquea automáticamente tras 15 minutos de inactividad. Las cuentas nuevas quedan en modo "solo lectura" hasta que un médico les asigne rol de escritura.</p>
+      <p class="mt-3 text-[11px] text-[#9AA6A2] leading-relaxed">El acceso debe ser habilitado por un administrador. La sesión se bloquea tras 15 minutos de inactividad.</p>
     </form>
   </div>
 

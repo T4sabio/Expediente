@@ -32,14 +32,6 @@ export class AuthService {
     return data.session;
   }
 
-  async signUp(email, password, nombre) {
-    const { data, error } = await this.#db.auth.signUp({
-      email, password, options: { data: { nombre } }
-    });
-    if (error) throw new ApiError(this.#friendlyMessage(error), error);
-    return data.session;
-  }
-
   async signOut() {
     const { error } = await this.#db.auth.signOut({ scope: 'local' });
     if (error) throw new ApiError(error.message, error);
@@ -47,21 +39,18 @@ export class AuthService {
 
   /**
    * Rol y nombre del usuario autenticado, leídos de public.personal.
-   * Si el usuario acaba de registrarse, el trigger del servidor aún puede no
-   * haber corrido: en ese caso se asume 'lectura' (el mínimo privilegio) y no
-   * se rompe la UI — las políticas RLS son las que de verdad deciden qué puede hacer.
+   * Un perfil ausente se considera inactivo: tanto la interfaz como RLS deniegan acceso.
    */
   async getMyProfile() {
     const { data, error } = await this.#db.from('personal').select('nombre, rol, activo').maybeSingle();
     if (error) throw new ApiError('No se pudo verificar el perfil de acceso.', error);
-    if (!data) return { nombre: null, rol: 'lectura', activo: true, pendiente: true };
+    if (!data) return { nombre: null, rol: 'lectura', activo: false, pendiente: true };
     return { ...data, pendiente: false };
   }
 
   #friendlyMessage(error) {
     if (error.message?.includes('Invalid login credentials')) return 'Correo o contraseña incorrectos.';
     if (error.message?.includes('User already registered')) return 'Ya existe una cuenta con ese correo.';
-    if (error.message?.includes('Password should be')) return 'La contraseña debe tener al menos 6 caracteres.';
     return error.message;
   }
 }

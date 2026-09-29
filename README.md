@@ -12,6 +12,9 @@ cp .env.example .env.local     # completa VITE_SUPABASE_URL y VITE_SUPABASE_ANON
 #   4) supabase/004_correcciones_produccion.sql ← columna faltante y límites de texto
 #   5) supabase/005_pam_antibioticos_cultivos_periodicos.sql ← PAM/seguimiento/cultivos periódicos
 #   6) supabase/006_hardening_produccion.sql ← hardening final de producción
+#   7) supabase/007_phase2_performance.sql
+#   8) supabase/008_phase3_product.sql
+#   9) supabase/009_auth_approval_required.sql ← bloquea altas y exige aprobación
 npm run dev
 npm test                       # pruebas unitarias (sin dependencias, usa node:test)
 npm run build                  # salida en dist/
@@ -19,22 +22,26 @@ npm run build                  # salida en dist/
 
 ## ⚠️ Antes de tener pacientes reales (checklist de seguridad)
 
-1. **Corre `002_auth_rls_audit.sql`.** Sin esto la anon key sigue dando acceso
+1. **Corre todas las migraciones, incluida `009_auth_approval_required.sql`.** Sin
+   `002_auth_rls_audit.sql` la anon key sigue dando acceso
    completo a cualquiera con la URL. Después de correrlo, la app exige login
-   y las políticas RLS deciden en el servidor quién puede leer/escribir —
-   nunca confíes solo en lo que oculta la interfaz.
-2. **Da de alta al personal.** Cada persona crea su cuenta desde la pantalla
-   de login (queda en rol `lectura`). Un administrador entra a Supabase →
-   Table Editor → `personal` y le cambia el rol a `medico` o `enfermeria`
-   según corresponda. No hay forma de auto-promoverse desde el cliente.
-3. **Usa un proyecto Supabase separado para Vercel Preview.** Si conectaste
+   y las políticas RLS deciden en el servidor quién puede leer/escribir.
+2. **Desactiva el registro público en el proyecto Supabase desplegado.**
+   `supabase/config.toml` lo aplica al entorno local; en proyectos alojados,
+   desactiva los registros en Authentication → Settings y exige confirmación
+   de correo. Crea usuarios mediante invitación administrativa.
+3. **Aprueba al personal explícitamente.** La migración deja inactivas las cuentas
+   existentes con rol `lectura`; revísalas en Table Editor → `personal` y activa
+   solo las verificadas. Las nuevas altas se crean inactivas y no leen expedientes
+   hasta que un administrador establezca `activo = true` y asigne el rol adecuado.
+4. **Usa un proyecto Supabase separado para Vercel Preview.** Si conectaste
    las mismas variables `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` a
    Production y a Preview en Vercel, cada Pull Request que abras leerá y
    escribirá sobre datos reales de pacientes. En Vercel → Project Settings →
    Environment Variables, crea un segundo proyecto Supabase "de desarrollo"
    (mismas migraciones, datos de prueba) y asígnalo solo al ambiente
    `Preview`; deja el proyecto de producción únicamente en `Production`.
-4. **Revisa la bitácora.** La tabla `public.audit_log` (creada por
+5. **Revisa la bitácora.** La tabla `public.audit_log` (creada por
    `002_auth_rls_audit.sql`) registra automáticamente cada alta/edición en
    las 7 tablas clínicas, con usuario y fecha. El "borrado" de un paciente
    es lógico (columna `Eliminado_En`/`Eliminado_Por` en `DB_Pacientes`); para
@@ -158,7 +165,7 @@ La versión de Fase 3 añade:
 
 ### Orden de migraciones
 
-`000_schema.sql` → `001_search_and_indexes.sql` → `002_auth_rls_audit.sql` → `003_realtime.sql` → `004_correcciones_produccion.sql` → `005_pam_antibioticos_cultivos_periodicos.sql` → `006_hardening_produccion.sql` → `007_phase2_performance.sql` → `008_phase3_product.sql`.
+`000_schema.sql` → `001_search_and_indexes.sql` → `002_auth_rls_audit.sql` → `003_realtime.sql` → `004_correcciones_produccion.sql` → `005_pam_antibioticos_cultivos_periodicos.sql` → `006_hardening_produccion.sql` → `007_phase2_performance.sql` → `008_phase3_product.sql` → `009_auth_approval_required.sql`.
 
 Las pruebas de base de datos de Fase 3 están en `supabase/tests/database/phase3_test.sql` y deben ejecutarse mediante `supabase test db` en CI.
 

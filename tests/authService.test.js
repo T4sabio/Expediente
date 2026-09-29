@@ -38,10 +38,11 @@ test('signInWithPassword: éxito devuelve la sesión', async () => {
   assert.equal(session.user.id, 'u1');
 });
 
-test('getMyProfile: si la fila de "personal" todavía no existe (RLS/trigger no ha corrido), asume rol "lectura" sin romper la UI', async () => {
+test('getMyProfile: una fila personal ausente queda inactiva y pendiente de aprobación', async () => {
   const auth = new AuthService(makeAuthClient());
   const profile = await auth.getMyProfile();
   assert.equal(profile.rol, 'lectura');
+  assert.equal(profile.activo, false);
   assert.equal(profile.pendiente, true);
 });
 

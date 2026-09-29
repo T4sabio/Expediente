@@ -23,7 +23,6 @@ export class DashboardController {
   #loadSeq = 0;   // descarta expedientes de pacientes que ya no son el actual
   #actions;
   #submitHandlers;
-  #signupMode = false;
   #pendingDelete = null; // { hc, nombre } — paciente a confirmar en modal-eliminar-paciente
   #pendingEditModificadoEn = null; // sello de la última edición conocida, para detectar conflictos
   #unsubscribeRealtime = null;
@@ -65,7 +64,6 @@ export class DashboardController {
       'cerrar-sesion': () => this.#signOut(),
       'bloquear-sesion': () => this.#signOut('Sesión bloqueada por inactividad o por solicitud del usuario.'),
       'imprimir-expediente': () => this.#printRecord(),
-      'toggle-signup': () => { this.#signupMode = !this.#signupMode; this.#view.setSignupMode(this.#signupMode); },
       'open-command-palette': () => this.#openCommandPalette(),
       'open-novedades': () => this.#openNovedades(),
       'mark-timeline-read': () => this.#markTimelineRead(),
@@ -168,14 +166,8 @@ export class DashboardController {
     const f = this.#modals.readForm(form);
     this.#view.clearLoginError();
     try {
-      if (this.#signupMode) await this.#auth.signUp(f.email, f.password, f.nombre);
-      else await this.#auth.signInWithPassword(f.email, f.password);
+      await this.#auth.signInWithPassword(f.email, f.password);
       form.reset();
-      // onAuthStateChange dispara #onSignedIn(); si Supabase pide confirmar el
-      // correo, no habrá sesión todavía y se lo indicamos a la persona.
-      if (!(await this.#auth.getSession())) {
-        this.#view.showLoginError('Revisa tu correo para confirmar la cuenta antes de iniciar sesión.');
-      }
     } catch (err) {
       this.#view.showLoginError(err.message);
     }

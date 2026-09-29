@@ -34,6 +34,18 @@ test('migración 006 usa columnas reales del esquema clínico', () => {
   assert.doesNotMatch(sql, /\"Pregunta\"/);
 });
 
+test('auth: altas públicas deshabilitadas y perfiles de lectura requieren aprobación', () => {
+  const sql = fs.readFileSync(path.join(root, 'supabase/009_auth_approval_required.sql'), 'utf8');
+  const config = fs.readFileSync(path.join(root, 'supabase/config.toml'), 'utf8');
+  const login = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  assert.match(config, /enable_signup\s*=\s*false/);
+  assert.match(config, /enable_confirmations\s*=\s*true/);
+  assert.match(sql, /activo set default false/);
+  assert.match(sql, /'lectura',[\s\S]*false/);
+  assert.match(sql, /where rol = 'lectura' and activo/);
+  assert.doesNotMatch(login, /Crear una cuenta|toggle-signup/);
+});
+
 test('realtime 003 es idempotente tabla por tabla', () => {
   const sql = fs.readFileSync(path.join(root, 'supabase/003_realtime.sql'), 'utf8');
   assert.match(sql, /pg_publication_tables/);
