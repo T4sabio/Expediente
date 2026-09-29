@@ -25,6 +25,8 @@ table.clinical tbody tr:hover { background: #FAFCFC; }
 body.role-lectura [data-action="nuevo-paciente"],
 body.role-lectura [data-action="editar-paciente"],
 body.role-lectura form button[type="submit"] { display: none; }
+body:not(.role-medico) [data-action="restaurar-paciente"],
+body:not(.role-medico) [data-action="pedir-eliminar-paciente"] { display: none; }
 
 /* Exportar/imprimir expediente: se arma un contenedor temporal con todas las
    secciones y se oculta el resto de la página mientras se imprime. */
@@ -36,6 +38,8 @@ body.role-lectura form button[type="submit"] { display: none; }
   .print-section-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
     margin-bottom: 8px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
   .print-only table.clinical { font-size: 11px; }
+  .print-chart { display: block; width: 100%; max-height: 95mm; object-fit: contain; }
+  .print-chart-empty { font-size: 10px; color: #555; }
 }
 
 .print-header { margin-bottom: 20px; }
@@ -86,6 +90,7 @@ body.contrast-high :focus-visible { outline: 3px solid #12312E !important; outli
 
 /* Impresión profesional: cabecera/identificador y pie de página se repiten por página. */
 .print-confidential { margin-top: 6px; font-size: 10px; font-weight: 600; letter-spacing: .02em; color: #333; }
+.print-disclosure { margin-top: 6px; font-size: 9px; color: #555; }
 @page { margin: 14mm 12mm 16mm; }
 @media print {
   .print-only { min-height: 100vh; position: relative; }

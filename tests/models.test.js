@@ -19,6 +19,19 @@ test('VitalSigns: detecta valores anormales', () => {
   assert.equal(v.isAbnormal('Frecuencia_Cardiaca'), false);
 });
 
+test('VitalSigns: ajusta FC infantil, SpO2 en EPOC y umbral de PAM', () => {
+  const infant = new Patient({ Edad: '6 meses' });
+  const context = { age: infant.age(), diagnoses: '' };
+  assert.equal(VitalSigns.isValueAbnormal('Frecuencia_Cardiaca', 130, context), false);
+  const newborn = new Patient({ Edad: '4 semanas' });
+  assert.equal(VitalSigns.isValueAbnormal('Frecuencia_Cardiaca', 150, { age: newborn.age() }), false);
+  assert.equal(VitalSigns.isValueAbnormal('Frecuencia_Cardiaca', 130), true);
+  assert.equal(VitalSigns.isValueAbnormal('SpO2', 90, { diagnoses: 'EPOC' }), false);
+  assert.equal(VitalSigns.isValueAbnormal('SpO2', 90), true);
+  assert.equal(VitalSigns.isValueAbnormal('PAM', 67), false);
+  assert.equal(VitalSigns.isValueAbnormal('PAM', 64), true);
+});
+
 test('VitalSigns: convierte la fecha a offset explícito y números', () => {
   const row = VitalSigns.fromForm(vitalForm(), '2026-1').toRow();
   assert.equal(row.Fecha_Hora, '2026-09-24T14:30:00-06:00');
@@ -31,13 +44,26 @@ test('VitalSigns: rechaza valores imposibles', () => {
 });
 
 test('Medication: días de tratamiento', () => {
-  const activa = new Medication({ Activo: 'Sí', Fecha_Inicio: '2026-09-01' });
-  assert.equal(activa.treatmentDays('2026-09-24'), 23);
+  const activa = new Medication({ Activo: 'Sí', Requiere_Seguimiento_Dias: true, Fecha_Inicio: '2026-09-01' });
+  assert.equal(activa.treatmentDays('2026-09-24'), 24);
   assert.equal(activa.isProlonged('2026-09-24'), true);
   const suspendida = new Medication({ Activo: 'No', Fecha_Inicio: '2026-09-01', Fecha_Omision: '2026-09-05' });
-  assert.equal(suspendida.treatmentDays('2026-09-24'), 4);
+  assert.equal(suspendida.treatmentDays('2026-09-24'), 5);
   assert.equal(suspendida.isProlonged('2026-09-24'), false);
   assert.equal(new Medication({ Dias_Tratamiento: '7' }).treatmentDays(), 7);
+});
+
+test('Medication: cuenta el día de inicio como día 1 y limita alerta prolongada a seguimiento', () => {
+  const antibiotic = new Medication({ Activo: 'Sí', Requiere_Seguimiento_Dias: true, Fecha_Inicio: '2026-09-01' });
+  assert.equal(antibiotic.treatmentDays('2026-09-01'), 1);
+  assert.match(antibiotic.coverageText('2026-09-01'), /primer día/);
+  assert.match(antibiotic.coverageText('2026-09-02'), /día 2/);
+  assert.equal(antibiotic.isProlonged('2026-09-14'), true);
+  const future = new Medication({ Activo: 'Sí', Fecha_Inicio: '2026-09-03' });
+  assert.equal(future.treatmentDays('2026-09-02'), 0);
+  assert.match(future.coverageText('2026-09-02'), /sin días/);
+  const chronic = new Medication({ Activo: 'Sí', Fecha_Inicio: '2026-09-01' });
+  assert.equal(chronic.isProlonged('2026-09-30'), false);
 });
 
 test('Patient: arma la edad y valida obligatorios', () => {
@@ -67,6 +93,21 @@ test('PatientRecord: insertar en página 2 actualiza el total sin desplazar fila
   assert.equal(next.tasks[0].id, record.tasks[0].id);
   assert.equal(next.pagination.tasks.total, 51);
   assert.equal(next.pagination.tasks.totalPages, 3);
+});
+
+test('PatientRecord: mantiene labHistory al día con eventos Realtime', () => {
+  const first = new LabResult({ id: 1, HC: 'x', Fecha: '2026-09-01', Tipo_Lab: 'PCR' });
+  const record = new PatientRecord({
+    patient: new Patient({ HC: 'x', Nombre_Completo: 'Paciente' }),
+    labs: [first], labHistory: [first],
+    pagination: { labs: { page: 1, pageSize: 25, total: 1, totalPages: 1, listKey: 'labs' } }
+  });
+  const inserted = record.withRealtimeEvent('DB_Laboratorios', {
+    eventType: 'INSERT', new: { id: 2, HC: 'x', Fecha: '2026-09-02', Tipo_Lab: 'PCR' }
+  });
+  assert.deepEqual(inserted.labHistory.map(lab => lab.id), [2, 1]);
+  const deleted = inserted.withRealtimeEvent('DB_Laboratorios', { eventType: 'DELETE', old: { id: 1, HC: 'x' } });
+  assert.deepEqual(deleted.labHistory.map(lab => lab.id), [2]);
 });
 
 test('PatientRecord: DELETE Realtime en fila visible no contamina una página distinta y corrige el total', () => {

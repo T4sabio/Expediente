@@ -13,10 +13,17 @@ import { Patient } from '../src/models/Patient.js';
  * reemplaza por dobles de prueba simples que solo registran llamadas.
  */
 const listeners = {};
+const sessionStorageData = new Map();
+const domElements = new Map();
+globalThis.sessionStorage = {
+  getItem: key => sessionStorageData.get(key) ?? null,
+  setItem: (key, value) => sessionStorageData.set(key, value),
+  removeItem: key => sessionStorageData.delete(key)
+};
 globalThis.document = {
   addEventListener(type, fn) { (listeners[type] ??= []).push(fn); },
   removeEventListener() {},
-  getElementById() { return null; },
+  getElementById(id) { return domElements.get(id) ?? null; },
   querySelectorAll() { return []; }
 };
 function dispatch(type, evt) { for (const fn of [...(listeners[type] || [])]) fn(evt); }
@@ -57,12 +64,12 @@ function makeView() {
     showSearchSpinner: record('showSearchSpinner'), hideSearchSpinner: record('hideSearchSpinner'),
     announceSearchStatus: record('announceSearchStatus'), showFatalError: record('showFatalError'),
     renderRound: record('renderRound'), renderRoundLoading: record('renderRoundLoading'), setUiPreferences: record('setUiPreferences'),
-    setNovedadesCount: record('setNovedadesCount'), focusSearch: record('focusSearch')
+    setNovedadesCount: record('setNovedadesCount'), focusSearch: record('focusSearch'), clearProtectedData: record('clearProtectedData')
   };
 }
 function makeModals(formValues = {}) {
   const calls = [];
-  return { calls, open: (...a) => calls.push(['open', ...a]), close: (...a) => calls.push(['close', ...a]), readForm: () => formValues };
+  return { calls, open: (...a) => calls.push(['open', ...a]), close: (...a) => calls.push(['close', ...a]), closeAll: () => calls.push(['closeAll']), readForm: () => formValues };
 }
 function makeToast() {
   const calls = [];
@@ -72,6 +79,8 @@ const charts = { render() {}, destroy() {} };
 
 function setup({ session = null, auth = {}, api = {} } = {}) {
   for (const k of Object.keys(listeners)) delete listeners[k];
+  sessionStorageData.clear();
+  if (session) sessionStorageData.set('ronda-clinica:last-activity', String(Date.now()));
   const view = makeView();
   const modals = makeModals();
   const toast = makeToast();
@@ -106,6 +115,68 @@ test('init(): con sesión activa, entra directo y carga servicios', async () => 
   await controller.init();
   assert.ok(view.calls.some(c => c[0] === 'hideLoginScreen'));
   assert.ok(view.calls.some(c => c[0] === 'renderServicios'));
+});
+
+test('init(): una sesión restaurada sin actividad reciente se revoca y no abre el dashboard', async () => {
+  let signOutCalls = 0;
+  const { controller, view } = setup({
+    session: { user: { id: 'u1' } },
+    auth: { signOut: async () => { signOutCalls++; } }
+  });
+  sessionStorageData.set('ronda-clinica:last-activity', String(Date.now() - DashboardController.IDLE_TIMEOUT_MS - 1000));
+
+  await controller.init();
+
+  assert.equal(signOutCalls, 1);
+  assert.ok(view.calls.some(c => c[0] === 'showLoginScreen'));
+  assert.ok(!view.calls.some(c => c[0] === 'hideLoginScreen'));
+  assert.ok(view.calls.some(c => c[0] === 'showLoginError' && /inactividad/.test(c[1])));
+  assert.equal(sessionStorageData.has('ronda-clinica:last-activity'), false);
+});
+
+test('búsqueda con Enter: exige verificar el nombre y escribir la HC exacta', async () => {
+  const makeElement = () => ({
+    textContent: '', value: '',
+    classList: { add() {}, remove() {} },
+    focus() {}
+  });
+  for (const id of ['searchConfirmName', 'searchConfirmHC', 'searchConfirmContext', 'searchConfirmInput', 'searchConfirmError']) {
+    domElements.set(id, makeElement());
+  }
+  const { controller, view, modals, state } = setup({
+    api: {
+      searchPatients: async () => [{ HC: 'HC-42', Nombre_Completo: 'Ana Perez', Servicio: 'UCI', Cama: '4' }],
+      getPatientRecord: async () => { throw new Error('prueba finalizada'); }
+    }
+  });
+  view.getSearchInput = () => ({ query: 'Ana', servicio: '' });
+  await controller.init();
+
+  dispatch('keydown', { key: 'Enter', target: { id: 'patientSearch' }, preventDefault() {} });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(modals.calls.some(call => call[0] === 'open' && call[1] === 'modal-confirmar-paciente'));
+  assert.equal(state.get().currentHC, null);
+
+  click({ dataset: { action: 'confirm-search-patient' } });
+  assert.equal(state.get().currentHC, null);
+  assert.match(domElements.get('searchConfirmError').textContent, /HC no coincide/);
+
+  domElements.get('searchConfirmInput').value = 'HC-42';
+  click({ dataset: { action: 'confirm-search-patient' } });
+  assert.equal(state.get().currentHC, 'HC-42');
+  await new Promise(resolve => setImmediate(resolve));
+  domElements.clear();
+});
+
+test('bloqueo: cierra modales y elimina los datos clínicos del DOM', async () => {
+  const { controller, view, modals } = setup({ session: { user: { id: 'u1' } } });
+  await controller.init();
+
+  click({ dataset: { action: 'bloquear-sesion' } });
+  await new Promise(r => setTimeout(r, 0));
+
+  assert.ok(modals.calls.some(c => c[0] === 'closeAll'));
+  assert.ok(view.calls.some(c => c[0] === 'clearProtectedData'));
 });
 
 test('login: credenciales incorrectas muestran el error en la pantalla de login, no un toast genérico', async () => {

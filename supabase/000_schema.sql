@@ -74,7 +74,7 @@ create table if not exists public."DB_Pendientes" (
   "id"                            bigserial primary key,
   "HC"                            text not null references public."DB_Pacientes"("HC") on delete cascade,
   "Descripcion_Tarea"             text not null,
-  "Fecha_Solicitud"               date not null default current_date,
+  "Fecha_Solicitud"               date not null default ((now() at time zone 'America/Guatemala')::date),
   "Fecha_Programada"              date,
   "Justificacion_Observaciones"   text,
   "Estado"                        text not null default 'Pendiente' check ("Estado" in ('Pendiente', 'Realizado')),

@@ -24,8 +24,8 @@ export const VITAL_RANGES = Object.freeze({
   // PAM se calcula (no se captura en el formulario), pero se agrega aquí para que
   // las tarjetas de "Resumen clínico" (genéricas por Object.keys(VITAL_RANGES)) y el
   // marcado de anormalidad la reconozcan igual que a los demás signos vitales.
-  // Por debajo de 65 se considera hipoperfusión en adultos.
-  PAM: [70, 100]
+  // En adultos, PAM <65 se considera hipoperfusión.
+  PAM: [65, 100]
 });
 
 /** Signos vitales que se capturan en el formulario (excluye PAM, que es calculada). */

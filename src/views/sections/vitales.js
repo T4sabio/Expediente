@@ -11,17 +11,18 @@ const OPTIONS = [
   { key: 'Frecuencia_Respiratoria', label: 'Frecuencia respiratoria (rpm)' }
 ];
 
-function tableRows(rows) {
+function tableRows(rows, patient) {
   if (!rows.length) return emptyRow(7);
+  const vitalContext = { age: patient.age(), diagnoses: patient.Diagnosticos };
   return rows.slice().reverse().map(r => `
     <tr>
       <td class="py-2 px-3 font-mono-data text-xs">${fmtDateTime(r.Fecha_Hora)}</td>
-      <td class="py-2 px-3 font-mono-data ${cellFlag('PA_Sistolica', r.PA_Sistolica)}">${r.PA_Sistolica}/${r.PA_Diastolica}${abnormalMark('PA_Sistolica', r.PA_Sistolica)}</td>
-      <td class="py-2 px-3 font-mono-data ${cellFlag('PAM', r.PAM)}">${r.PAM ?? '—'}${abnormalMark('PAM', r.PAM)}</td>
-      <td class="py-2 px-3 font-mono-data ${cellFlag('Frecuencia_Cardiaca', r.Frecuencia_Cardiaca)}">${r.Frecuencia_Cardiaca}${abnormalMark('Frecuencia_Cardiaca', r.Frecuencia_Cardiaca)}</td>
-      <td class="py-2 px-3 font-mono-data ${cellFlag('SpO2', r.SpO2)}">${r.SpO2}%${abnormalMark('SpO2', r.SpO2)}</td>
-      <td class="py-2 px-3 font-mono-data ${cellFlag('Temperatura', r.Temperatura)}">${r.Temperatura}°C${abnormalMark('Temperatura', r.Temperatura)}</td>
-      <td class="py-2 px-3 font-mono-data ${cellFlag('Frecuencia_Respiratoria', r.Frecuencia_Respiratoria)}">${r.Frecuencia_Respiratoria}${abnormalMark('Frecuencia_Respiratoria', r.Frecuencia_Respiratoria)}</td>
+      <td class="py-2 px-3 font-mono-data ${cellFlag('PA_Sistolica', r.PA_Sistolica, vitalContext)}">${r.PA_Sistolica}/${r.PA_Diastolica}${abnormalMark('PA_Sistolica', r.PA_Sistolica, vitalContext)}</td>
+      <td class="py-2 px-3 font-mono-data ${cellFlag('PAM', r.PAM, vitalContext)}">${r.PAM ?? '—'}${abnormalMark('PAM', r.PAM, vitalContext)}</td>
+      <td class="py-2 px-3 font-mono-data ${cellFlag('Frecuencia_Cardiaca', r.Frecuencia_Cardiaca, vitalContext)}">${r.Frecuencia_Cardiaca}${abnormalMark('Frecuencia_Cardiaca', r.Frecuencia_Cardiaca, vitalContext)}</td>
+      <td class="py-2 px-3 font-mono-data ${cellFlag('SpO2', r.SpO2, vitalContext)}">${r.SpO2}%${abnormalMark('SpO2', r.SpO2, vitalContext)}</td>
+      <td class="py-2 px-3 font-mono-data ${cellFlag('Temperatura', r.Temperatura, vitalContext)}">${r.Temperatura}°C${abnormalMark('Temperatura', r.Temperatura, vitalContext)}</td>
+      <td class="py-2 px-3 font-mono-data ${cellFlag('Frecuencia_Respiratoria', r.Frecuencia_Respiratoria, vitalContext)}">${r.Frecuencia_Respiratoria}${abnormalMark('Frecuencia_Respiratoria', r.Frecuencia_Respiratoria, vitalContext)}</td>
     </tr>`).join('');
 }
 
@@ -74,7 +75,7 @@ export const vitalesSection = {
         <div class="chart-wrap mt-3"><canvas id="vitalChart" role="img" aria-label="Gráfico de tendencia de signos vitales; ver tabla equivalente debajo"></canvas></div>
         <div id="vitalChartTextAlt"></div>
       </div>
-      ${tableWrap(tableRows(record.vitals))}
+      ${tableWrap(tableRows(record.vitals, record.patient))}
       ${paginationControls(pagination, 'signos vitales')}`;
   },
 

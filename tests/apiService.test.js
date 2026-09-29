@@ -77,7 +77,10 @@ test('searchPatients: un error de RPC que NO es "función faltante" se propaga (
 
 test('getPatientRecord: agrega las 7 tablas en un PatientRecord', async () => {
   const db = new MockSupabase({
-    rpcs: { resumen_paciente: { data: { counts: { vitals: 1, medications: 0, labs: 0, consultations: 0, cultures: 0, tasks: 0 }, labTypes: [], latestVital: null }, error: null } },
+    rpcs: {
+      resumen_paciente: { data: { counts: { vitals: 1, medications: 0, labs: 0, consultations: 0, cultures: 0, tasks: 0 }, labTypes: [], latestVital: null }, error: null },
+      ultima_actividad_paciente: { data: [], error: null }
+    },
     tables: {
       DB_Pacientes: { data: { HC: '2026-1', Nombre_Completo: 'Ana', Servicio: 'UCI' }, error: null },
       DB_SignosVitales: { data: [{ id: 1, PA_Sistolica: 120, PA_Diastolica: 80 }], error: null },
@@ -92,6 +95,37 @@ test('getPatientRecord: agrega las 7 tablas en un PatientRecord', async () => {
   const record = await api.getPatientRecord('2026-1');
   assert.equal(record.patient.Nombre_Completo, 'Ana');
   assert.equal(record.vitals.length, 1);
+});
+
+test('getPatientRecord: recupera todas las páginas del historial de laboratorios para el gráfico', async () => {
+  const labRows = Array.from({ length: 1001 }, (_, index) => ({
+    id: index + 1, HC: '2026-1', Fecha: new Date(Date.UTC(2023, 0, 1 + 1000 - index)).toISOString().slice(0, 10),
+    Tipo_Lab: 'Creatinina', Valor_Numerico: index
+  }));
+  const client = {
+    rpc: async name => name === 'resumen_paciente'
+      ? { data: { counts: { labs: labRows.length }, labTypes: ['Creatinina'] }, error: null }
+      : { data: [], error: null },
+    from(table) {
+      let from = 0;
+      let to = Infinity;
+      const builder = {
+        select: () => builder, eq: () => builder, is: () => builder, order: () => builder,
+        range: (start, end) => { from = start; to = end; return builder; },
+        single: () => builder,
+        then(resolve) {
+          const data = table === 'DB_Pacientes'
+            ? { HC: '2026-1', Nombre_Completo: 'Ana' }
+            : table === 'DB_Laboratorios' ? labRows.slice(from, to + 1) : [];
+          resolve({ data, error: null });
+        }
+      };
+      return builder;
+    }
+  };
+  const record = await new ApiService(client).getPatientRecord('2026-1');
+  assert.equal(record.labs.length, 25);
+  assert.equal(record.labHistory.length, 1001);
 });
 
 test('getPatientRecord: paciente inexistente lanza un error legible', async () => {
@@ -132,6 +166,31 @@ test('addVitalSigns / addMedication: insertan sin lanzar cuando el servidor no r
   assert.equal(result.id, 1);
 });
 
+test('deletePatient / restorePatient: usan RPC con motivo y devuelven la HC afectada', async () => {
+  const db = new MockSupabase({ rpcs: {
+    eliminar_paciente: ({ p_hc }) => ({ data: p_hc, error: null }),
+    restaurar_paciente: ({ p_hc }) => ({ data: p_hc, error: null })
+  } });
+  const api = new ApiService(db);
+
+  assert.equal(await api.deletePatient('HC-7', 'Duplicado'), 'HC-7');
+  assert.equal(await api.restorePatient('HC-7', 'Corrección validada'), 'HC-7');
+  assert.deepEqual(db.calls.rpc, [
+    { name: 'eliminar_paciente', params: { p_hc: 'HC-7', p_motivo: 'Duplicado' } },
+    { name: 'restaurar_paciente', params: { p_hc: 'HC-7', p_motivo: 'Corrección validada' } }
+  ]);
+  assert.deepEqual(db.calls.from, []);
+});
+
+test('recordPatientPrint: registra la HC y el conteo de registros mediante RPC', async () => {
+  const db = new MockSupabase({ rpcs: { registrar_impresion_expediente: { data: null, error: null } } });
+  await new ApiService(db).recordPatientPrint('HC-9', { vitals: 30, labs: 4 });
+  assert.deepEqual(db.calls.rpc.at(-1), {
+    name: 'registrar_impresion_expediente',
+    params: { p_hc: 'HC-9', p_registros: { vitals: 30, labs: 4 } }
+  });
+});
+
 /* ---------------------------- Concurrencia (2.5) ---------------------------- */
 
 test('updatePatient: conflicto de edición concurrente cuando 0 filas cambian', async () => {
@@ -141,6 +200,13 @@ test('updatePatient: conflicto de edición concurrente cuando 0 filas cambian', 
     () => api.updatePatient('2026-1', { toUpdateRow: () => ({}) }, { expectedModificadoEn: '2026-01-01T00:00:00Z' }),
     /Otra persona modificó este paciente/
   );
+});
+
+test('updatePatient: un sello nulo sigue siendo condición y 0 filas siempre falla', async () => {
+  const db = new MockSupabase({ tables: { DB_Pacientes: { data: [], error: null } } });
+  const api = new ApiService(db);
+  await assert.rejects(() => api.updatePatient('HC-1', { toUpdateRow: () => ({}) }), ConflictError);
+  await assert.rejects(() => api.updatePatient('HC-1', { toUpdateRow: () => ({}) }, { expectedModificadoEn: null }), ConflictError);
 });
 
 test('completeTask: sin Modificado_En esperado, actualiza sin exigir coincidencia', async () => {
@@ -190,11 +256,22 @@ test('subscribeToPatient: se suscribe a las 7 tablas y la función de cancelaci�
 /* ---------------------------- Producto Fase 3 ---------------------------- */
 
 test('getRoundOverview: usa RPC mínimo y limita el tamaño solicitado', async () => {
-  const db = new MockSupabase({ rpcs: { ronda_hoy: { data: [{ hc: '1', nombre_completo: 'Ana' }], error: null } } });
+  const db = new MockSupabase({ rpcs: { ronda_hoy: { data: [{ hc: '1', nombre_completo: 'Ana', due_tasks: 0, latest_activity_at: null, vitals_overdue: true, total_active: 1 }], error: null } } });
   const api = new ApiService(db);
   const rows = await api.getRoundOverview({ servicio: 'UCI', limit: 999 });
   assert.equal(rows.length, 1);
   assert.deepEqual(db.calls.rpc.at(-1), { name: 'ronda_hoy', params: { p_servicio: 'UCI', p_limit: 100 } });
+});
+
+test('getRoundOverview: no acepta el contrato SQL antiguo con métricas incompletas', async () => {
+  const db = new MockSupabase({ rpcs: { ronda_hoy: { data: [{ hc: '1', open_tasks: 1 }], error: null } } });
+  await assert.rejects(() => new ApiService(db).getRoundOverview(), /está desactualizada/);
+});
+
+test('getRoundOverview y getPatientTimeline: RPC ausentes generan error visible, no lista vacía', async () => {
+  const api = new ApiService(new MockSupabase());
+  await assert.rejects(() => api.getRoundOverview(), /requiere desplegar/);
+  await assert.rejects(() => api.getPatientTimeline('HC-1'), /requiere desplegar/);
 });
 
 test('getPatientTimeline: propaga errores reales y devuelve eventos del RPC', async () => {
@@ -207,11 +284,12 @@ test('getPatientTimeline: propaga errores reales y devuelve eventos del RPC', as
   await assert.rejects(() => new ApiService(failing).getPatientTimeline('HC-1'), ApiError);
 });
 
-test('getPatientLastActivity: ausencia temporal del RPC no bloquea la carga del expediente', async () => {
+test('getPatientLastActivity: RPC ausente devuelve un error visible, no actividad vacía', async () => {
   const degraded = [];
   const db = new MockSupabase();
   const api = new ApiService(db, { onDegraded: name => degraded.push(name) });
   const result = await api.getPatientLastActivity('HC-1');
-  assert.deepEqual(result, { data: [], error: null });
+  assert.equal(result.data, null);
+  assert.match(result.error.message, /requiere desplegar/);
   assert.deepEqual(degraded, ['ultima_actividad_paciente']);
 });

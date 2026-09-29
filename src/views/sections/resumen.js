@@ -20,6 +20,7 @@ export const resumenSection = {
     const summary = record.summary ?? {};
     const counts = summary.counts ?? {};
     const last = record.latestVitals;
+    const vitalContext = { age: record.patient.age(), diagnoses: record.patient.Diagnosticos };
 
     const meds = summary.activeMedications?.length ? summary.activeMedications : record.activeMedications;
     const tasks = summary.openTasks?.length ? summary.openTasks : record.openTasks;
@@ -28,10 +29,10 @@ export const resumenSection = {
 
     const vitalCards = last
       ? Object.keys(VITAL_RANGES).map(key => {
-          const flag = last.isAbnormal(key);
+          const flag = last.isAbnormal(key, vitalContext);
           return `<div class="rounded-lg border ${flag ? 'border-critical/40 bg-critical-soft' : 'border-hairline bg-white'} p-3">
             <div class="text-[11px] text-[#5C6B67]">${VITAL_LABELS[key]}</div>
-            <div class="text-lg font-mono-data font-semibold ${flag ? 'text-critical' : 'text-ink'}">${esc(orDash(last[key]))}${abnormalMark(key, last[key])}</div>
+            <div class="text-lg font-mono-data font-semibold ${flag ? 'text-critical' : 'text-ink'}">${esc(orDash(last[key]))}${abnormalMark(key, last[key], vitalContext)}</div>
           </div>`;
         }).join('')
       : '<p class="text-sm text-[#5C6B67]">Sin registros de signos vitales.</p>';

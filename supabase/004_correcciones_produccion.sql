@@ -22,14 +22,19 @@
 -- 1. Fecha_Solicitud en DB_Pendientes
 -- ----------------------------------------------------------------------------
 alter table public."DB_Pendientes"
-  add column if not exists "Fecha_Solicitud" date not null default current_date;
+  add column if not exists "Fecha_Solicitud" date not null default ((now() at time zone 'America/Guatemala')::date);
+
+alter table public."DB_Pendientes"
+  alter column "Fecha_Solicitud" set default ((now() at time zone 'America/Guatemala')::date);
 
 -- Para pendientes ya existentes sin este dato, se usa la fecha programada (si
 -- la tenían) como mejor aproximación disponible; el default de arriba ya cubre
 -- las filas nuevas, esto solo repara el historial previo a esta migración.
 update public."DB_Pendientes"
 set "Fecha_Solicitud" = coalesce("Fecha_Programada", "Fecha_Solicitud")
-where "Fecha_Solicitud" = current_date and "Fecha_Programada" is not null and "Fecha_Programada" < current_date;
+where "Fecha_Solicitud" = (now() at time zone 'America/Guatemala')::date
+  and "Fecha_Programada" is not null
+  and "Fecha_Programada" < (now() at time zone 'America/Guatemala')::date;
 
 create index if not exists idx_pend_fecha_solicitud on public."DB_Pendientes" ("Fecha_Solicitud" desc);
 

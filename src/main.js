@@ -39,10 +39,17 @@ async function bootstrap() {
   updateConnectionBanner();
 
   const client = createSupabaseClient();
+  const degradedMessages = {
+    buscar_pacientes: 'La búsqueda está en modo básico porque falta desplegar la búsqueda optimizada.',
+    listar_servicios: 'La lista de servicios usa una consulta de respaldo porque falta desplegar su función SQL.',
+    ronda_hoy: 'La ronda no está disponible: falta desplegar su función SQL.',
+    timeline_paciente: 'La línea temporal no está disponible: falta desplegar su función SQL.',
+    ultima_actividad_paciente: 'La última actividad no está disponible: falta desplegar su función SQL.'
+  };
   const controller = new DashboardController({
     api: new ApiService(client, {
       onDegraded: name => toast.show(
-        `La búsqueda está en modo básico porque falta desplegar \"${name}\".`,
+        degradedMessages[name] ?? `La función SQL \"${name}\" no está desplegada.`,
         'warn', { persistent: true, id: 'rpc-' + name }
       )
     }),

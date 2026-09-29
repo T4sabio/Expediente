@@ -15,6 +15,9 @@ cp .env.example .env.local     # completa VITE_SUPABASE_URL y VITE_SUPABASE_ANON
 #   7) supabase/007_phase2_performance.sql
 #   8) supabase/008_phase3_product.sql
 #   9) supabase/009_auth_approval_required.sql ← bloquea altas y exige aprobación
+#  10) supabase/010_patient_lifecycle_rpc.sql ← borrado/restauración con motivo auditado
+#  11) supabase/011_fechas_zona_guatemala.sql ← fechas clínicas en calendario local
+#  12) supabase/012_round_print_audit.sql ← ronda completa y auditoría de impresión
 npm run dev
 npm test                       # pruebas unitarias (sin dependencias, usa node:test)
 npm run build                  # salida en dist/
@@ -44,8 +47,7 @@ npm run build                  # salida en dist/
 5. **Revisa la bitácora.** La tabla `public.audit_log` (creada por
    `002_auth_rls_audit.sql`) registra automáticamente cada alta/edición en
    las 7 tablas clínicas, con usuario y fecha. El "borrado" de un paciente
-   es lógico (columna `Eliminado_En`/`Eliminado_Por` en `DB_Pacientes`); para
-   restaurarlo, un médico debe usar el flujo de restauración de la aplicación (`ApiService.restorePatient(hc)`).
+  es lógico (columna `Eliminado_En`/`Eliminado_Por` en `DB_Pacientes`); un médico puede usar el botón **Restaurar** de la aplicación e indicar HC y motivo. El borrado y la restauración se realizan mediante RPC y registran el motivo en la bitácora.
    No se recomienda editar `DB_Pacientes` directamente en el SQL Editor, porque la
    integridad del expediente y la auditoría se aplican mediante triggers/RLS.
 
@@ -87,8 +89,8 @@ Nueva pestaña: crear `views/sections/<nombre>.js`, registrarla en `sections/ind
 - **UI optimista**: suspender medicamento / marcar pendiente actualizan la pantalla
   al instante y revierten solo si el servidor rechaza el cambio.
 - **Tiempo relativo**: "Última toma: hace 12 min" en el resumen (`fmtRelative`).
-- **Imprimir/Exportar**: botón en la barra superior que arma una vista con todas las
-  secciones y abre el diálogo de impresión del navegador (puede guardarse como PDF).
+- **Imprimir/Exportar**: confirma el paciente y registra la solicitud en auditoría;
+  incluye todas las páginas de los historiales, la línea temporal y el gráfico de signos.
 - **Conflictos de edición**: al editar un paciente se guarda el sello de la última
   modificación conocida; si alguien más ya guardó cambios, el guardado se rechaza con
   un aviso claro en vez de sobrescribir en silencio.
@@ -151,7 +153,7 @@ GitHub Actions arranca Supabase local, ejecuta las pruebas pgTAP, las pruebas de
 
 ## Fase 3 — producto clínico premium
 
-Después de aplicar `006_hardening_produccion.sql` y `007_phase2_performance.sql`, despliega también `008_phase3_product.sql`.
+Después de aplicar `006_hardening_produccion.sql` y `007_phase2_performance.sql`, despliega `008_phase3_product.sql` y continúa con las migraciones `009` a `012` en orden.
 
 La versión de Fase 3 añade:
 
@@ -165,7 +167,7 @@ La versión de Fase 3 añade:
 
 ### Orden de migraciones
 
-`000_schema.sql` → `001_search_and_indexes.sql` → `002_auth_rls_audit.sql` → `003_realtime.sql` → `004_correcciones_produccion.sql` → `005_pam_antibioticos_cultivos_periodicos.sql` → `006_hardening_produccion.sql` → `007_phase2_performance.sql` → `008_phase3_product.sql` → `009_auth_approval_required.sql`.
+`000_schema.sql` → `001_search_and_indexes.sql` → `002_auth_rls_audit.sql` → `003_realtime.sql` → `004_correcciones_produccion.sql` → `005_pam_antibioticos_cultivos_periodicos.sql` → `006_hardening_produccion.sql` → `007_phase2_performance.sql` → `008_phase3_product.sql` → `009_auth_approval_required.sql` → `010_patient_lifecycle_rpc.sql` → `011_fechas_zona_guatemala.sql` → `012_round_print_audit.sql`.
 
 Las pruebas de base de datos de Fase 3 están en `supabase/tests/database/phase3_test.sql` y deben ejecutarse mediante `supabase test db` en CI.
 

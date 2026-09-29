@@ -81,18 +81,31 @@ test('Integridad real: HC inmutable y filas hijas respetan paciente activo', { s
 });
 
 test('Borrado lógico real: expediente eliminado deja de ser visible y sus hijos no pueden operar', { skip: !enabled, concurrency: false }, async () => {
-  const deleted = await doctor.from('DB_Pacientes').update({ Eliminado_En: new Date().toISOString() }).eq('HC', patient.HC);
-  assert.ifError(deleted.error);
+  const doctorApi = new ApiService(doctor);
+  const nurseApi = new ApiService(nurse);
+  await assert.rejects(() => nurseApi.deletePatient(patient.HC, 'Prueba de rol'), /Solo un médico/);
+  await assert.rejects(() => nurseApi.restorePatient(patient.HC, 'Prueba de rol'), /Solo un médico/);
+  assert.equal(await doctorApi.deletePatient(patient.HC, 'Registro creado para prueba de integración'), patient.HC);
+  await assert.rejects(() => doctorApi.deletePatient(patient.HC, 'Eliminación repetida'), /Paciente no encontrado o ya eliminado/);
   const patientRead = await reader.from('DB_Pacientes').select('HC').eq('HC', patient.HC);
   assert.ifError(patientRead.error);
   assert.equal(patientRead.data.length, 0);
+  const doctorRead = await doctor.from('DB_Pacientes').select('HC').eq('HC', patient.HC);
+  assert.ifError(doctorRead.error);
+  assert.equal(doctorRead.data.length, 0, 'RLS debe ocultar los eliminados también al médico');
   const childRead = await nurse.from('DB_Pendientes').select('id').eq('HC', patient.HC);
   assert.ifError(childRead.error);
   assert.equal(childRead.data.length, 0);
   const childWrite = await nurse.from('DB_Pendientes').insert({ HC: patient.HC, Descripcion_Tarea: 'bloqueada', Fecha_Solicitud: '2026-09-27' });
   assert.ok(childWrite.error, 'no debe poder escribirse sobre expediente eliminado');
-  const restored = await doctor.from('DB_Pacientes').update({ Eliminado_En: null }).eq('HC', patient.HC);
-  assert.ifError(restored.error);
+  assert.equal(await doctorApi.restorePatient(patient.HC, 'Corrección de prueba validada'), patient.HC);
+  const restoredRead = await doctor.from('DB_Pacientes').select('HC').eq('HC', patient.HC);
+  assert.ifError(restoredRead.error);
+  assert.equal(restoredRead.data.length, 1, 'la restauración debe devolver el expediente a la lectura normal');
+  await assert.rejects(() => doctorApi.restorePatient(patient.HC, 'Restauración repetida'));
+  const lifecycleAudit = await doctor.from('audit_log').select('motivo').eq('registro_id', patient.HC).order('creado_en', { ascending: false }).limit(2);
+  assert.ifError(lifecycleAudit.error);
+  assert.deepEqual(lifecycleAudit.data.map(row => row.motivo), ['Corrección de prueba validada', 'Registro creado para prueba de integración']);
 });
 
 test('Auditoría real: lectura restringida y diffs compactos', { skip: !enabled, concurrency: false }, async () => {

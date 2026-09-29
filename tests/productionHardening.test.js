@@ -24,6 +24,18 @@ test('migración 006 existe y contiene controles críticos de RLS/inmutabilidad'
   assert.match(sql, /solo medico puede leer bitacora/);
 });
 
+test('fechas clínicas derivadas usan el servidor y el calendario de Guatemala', () => {
+  const sql = fs.readFileSync(path.join(root, 'supabase/011_fechas_zona_guatemala.sql'), 'utf8');
+  const api = fs.readFileSync(path.join(root, 'src/services/ApiService.js'), 'utf8');
+  assert.match(sql, /Fecha_Solicitud[\s\S]*America\/Guatemala/);
+  assert.match(sql, /f_set_fechas_clinicas_guatemala/);
+  assert.match(sql, /Fecha_Omision/);
+  assert.match(sql, /Fecha_Respuesta/);
+  assert.match(sql, /Fecha_Resultado/);
+  assert.match(sql, /Fecha_Completado[\s\S]*pg_catalog\.now\(\)/);
+  assert.doesNotMatch(api, /todayISODate|new Date\(\)/);
+});
+
 
 test('migración 006 usa columnas reales del esquema clínico', () => {
   const sql = fs.readFileSync(path.join(root, 'supabase/006_hardening_produccion.sql'), 'utf8');

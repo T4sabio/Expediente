@@ -29,22 +29,49 @@ export class VitalSigns {
     return Math.round((d + (s - d) / 3) * 10) / 10;
   }
 
-  /** ¿Está el valor fuera del rango normal? Los valores vacíos no se marcan. */
-  static isValueAbnormal(key, value) {
+  static rangeFor(key, { age, diagnoses = '' } = {}) {
+    let ageYears = Number(age?.valor);
+    if (!Number.isFinite(ageYears)) ageYears = null;
+    else if (age.unidad === 'meses') ageYears /= 12;
+    else if (age.unidad === 'semanas') ageYears /= 52;
+
+    if (ageYears !== null && ageYears < 18) {
+      if (['PA_Sistolica', 'PA_Diastolica', 'PAM'].includes(key)) return null;
+      if (key === 'Frecuencia_Cardiaca') {
+        if (ageYears < 1) return [100, 160];
+        if (ageYears < 3) return [90, 150];
+        if (ageYears < 6) return [80, 140];
+        if (ageYears < 13) return [70, 120];
+      }
+      if (key === 'Frecuencia_Respiratoria') {
+        if (ageYears < 1) return [30, 60];
+        if (ageYears < 3) return [22, 40];
+        if (ageYears < 6) return [20, 34];
+        if (ageYears < 13) return [18, 30];
+      }
+    }
+
     const range = VITAL_RANGES[key];
+    if (key === 'SpO2' && /\bEPOC\b|enfermedad pulmonar obstructiva/i.test(diagnoses)) return [88, 100];
+    return range;
+  }
+
+  /** ¿Está el valor fuera del rango normal? Los valores vacíos no se marcan. */
+  static isValueAbnormal(key, value, context) {
+    const range = VitalSigns.rangeFor(key, context);
     if (!range || value === '' || value === null || value === undefined) return false;
     return Number(value) < range[0] || Number(value) > range[1];
   }
 
   /** 'alto' | 'bajo' | null — para no depender solo del color al marcar valores anormales. */
-  static abnormalDirection(key, value) {
-    const range = VITAL_RANGES[key];
-    if (!range || !VitalSigns.isValueAbnormal(key, value)) return null;
+  static abnormalDirection(key, value, context) {
+    const range = VitalSigns.rangeFor(key, context);
+    if (!range || !VitalSigns.isValueAbnormal(key, value, context)) return null;
     return Number(value) > range[1] ? 'alto' : 'bajo';
   }
 
-  isAbnormal(key) {
-    return VitalSigns.isValueAbnormal(key, this[key]);
+  isAbnormal(key, context) {
+    return VitalSigns.isValueAbnormal(key, this[key], context);
   }
 
   /** @param {Record<string,string>} form campos crudos; Fecha_Hora viene en hora local sin zona. */

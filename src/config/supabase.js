@@ -19,6 +19,7 @@ export function createSupabaseClient(env = import.meta.env) {
     auth: {
       autoRefreshToken: true,
       persistSession: true,
+      storage: globalThis.sessionStorage,
       detectSessionInUrl: false
     }
   });

@@ -40,13 +40,25 @@ export class DashboardView {
     this.#el.userRol.textContent = pendiente ? 'Acceso pendiente de aprobación' : (this.ROLE_LABELS[rol] ?? rol);
     this.#el.userBadge.classList.remove('hidden');
     this.#el.userBadge.classList.add('flex');
+    this.#doc.body.classList.toggle('role-medico', rol === 'medico');
     this.#doc.body.classList.toggle('role-lectura', rol !== 'medico' && rol !== 'enfermeria');
   }
 
   hideUser() {
     this.#el.userBadge.classList.add('hidden');
     this.#el.userBadge.classList.remove('flex');
+    this.#doc.body.classList.remove('role-medico');
     this.#doc.body.classList.remove('role-lectura');
+  }
+
+  clearProtectedData() {
+    this.#el.header.replaceChildren();
+    this.#el.section.replaceChildren();
+    this.#el.round?.replaceChildren();
+    this.#el.patientView.classList.add('hidden');
+    this.#el.empty.classList.remove('hidden');
+    this.hideSearchResults();
+    this.setSearchText('');
   }
 
   /* ---- carga ---- */

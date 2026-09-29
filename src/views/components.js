@@ -65,11 +65,11 @@ export function summaryPanel(title, count, items, gotoSection) {
   </button>`;
 }
 
-export const cellFlag = (key, val) => (VitalSigns.isValueAbnormal(key, val) ? 'text-critical font-semibold' : '');
+export const cellFlag = (key, val, context) => (VitalSigns.isValueAbnormal(key, val, context) ? 'text-critical font-semibold' : '');
 
-export function abnormalMark(key, val) {
-  if (!VitalSigns.isValueAbnormal(key, val)) return '';
-  const dir = VitalSigns.abnormalDirection ? VitalSigns.abnormalDirection(key, val) : null;
+export function abnormalMark(key, val, context) {
+  if (!VitalSigns.isValueAbnormal(key, val, context)) return '';
+  const dir = VitalSigns.abnormalDirection ? VitalSigns.abnormalDirection(key, val, context) : null;
   const arrow = dir === 'bajo' ? '▼' : dir === 'alto' ? '▲' : '⚠';
   const label = dir ? (dir === 'bajo' ? 'bajo' : 'alto') : 'anormal';
   return ` <span class="text-critical text-[11px] font-semibold" aria-label="${label}" title="${label}">${arrow}</span>`;

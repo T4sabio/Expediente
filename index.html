@@ -80,6 +80,11 @@
         <span class="hidden sm:inline">Nuevo paciente</span>
       </button>
 
+      <button data-action="restaurar-paciente" title="Restaurar paciente eliminado" class="flex items-center gap-1.5 px-3 py-2 rounded-md bg-white/10 hover:bg-white/20 text-sm transition">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 11a9 9 0 1 1 2.6 6.4M3 4v7h7" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="hidden sm:inline">Restaurar</span>
+      </button>
+
       <button data-action="open-command-palette" title="Abrir comandos" aria-label="Abrir comandos (Ctrl o Command K)" class="p-2 rounded-md bg-white/10 hover:bg-white/20 transition">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M5 8h14M5 16h14" stroke="white" stroke-width="1.8" stroke-linecap="round"/><circle cx="9" cy="8" r="2" stroke="white" stroke-width="1.5"/><circle cx="15" cy="16" r="2" stroke="white" stroke-width="1.5"/></svg>
       </button>
@@ -443,6 +448,38 @@
     </form>
   </div>
 
+  <div id="modal-confirmar-paciente" class="hidden fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4" aria-labelledby="searchConfirmTitle">
+    <div class="fade-in bg-white rounded-xl w-full max-w-md p-5 shadow-xl">
+      <h3 id="searchConfirmTitle" class="font-semibold text-[15px] mb-2">Confirma la identidad del paciente</h3>
+      <p class="text-sm text-[#5C6B67] mb-4">La búsqueda puede mostrar coincidencias aproximadas. Verifica el nombre y escribe la HC exacta antes de abrir el expediente.</p>
+      <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 rounded-lg border border-hairline bg-canvas p-3 text-sm">
+        <dt class="text-[#7C8784]">Nombre</dt><dd id="searchConfirmName" class="font-semibold text-ink"></dd>
+        <dt class="text-[#7C8784]">HC</dt><dd id="searchConfirmHC" class="font-mono-data font-semibold text-ink"></dd>
+        <dt class="text-[#7C8784]">Ubicación</dt><dd id="searchConfirmContext" class="text-ink"></dd>
+      </dl>
+      <label class="mt-4 block text-xs text-[#5C6B67]">Escribe la HC para confirmar
+        <input id="searchConfirmInput" type="text" autocomplete="off" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm font-mono-data">
+      </label>
+      <p id="searchConfirmError" class="hidden mt-2 text-xs text-critical" role="alert"></p>
+      <div class="flex justify-end gap-2 mt-5">
+        <button type="button" data-action="cancel-search-patient" class="px-4 py-2 text-sm rounded-md border border-hairline">Cancelar</button>
+        <button type="button" data-action="confirm-search-patient" class="px-4 py-2 text-sm rounded-md bg-accent text-white">Confirmar paciente</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-confirmar-impresion" class="hidden fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4" aria-labelledby="printConfirmTitle">
+    <div class="fade-in bg-white rounded-xl w-full max-w-md p-5 shadow-xl">
+      <h3 id="printConfirmTitle" class="font-semibold text-[15px] mb-2">Imprimir expediente completo</h3>
+      <p class="text-sm text-[#5C6B67]">La impresión quedará registrada en auditoría, incluso si luego cancelas el diálogo del sistema.</p>
+      <p id="printConfirmDetails" class="mt-3 rounded-lg border border-hairline bg-canvas p-3 text-sm text-ink"></p>
+      <div class="flex justify-end gap-2 mt-5">
+        <button type="button" data-action="close-modal" data-modal="modal-confirmar-impresion" class="px-4 py-2 text-sm rounded-md border border-hairline">Cancelar</button>
+        <button type="button" data-action="confirm-print-record" class="px-4 py-2 text-sm rounded-md bg-accent text-white">Registrar e imprimir</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Confirmar eliminación de paciente (borrado lógico, doble confirmación) -->
   <div id="modal-eliminar-paciente" class="hidden fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4">
     <form id="form-eliminar-paciente" class="fade-in bg-white rounded-xl w-full max-w-md p-5 shadow-xl">
@@ -453,10 +490,31 @@
       <label class="text-xs text-[#5C6B67]">Nombre completo del paciente
         <input required name="confirmacion" type="text" autocomplete="off" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
       </label>
+      <label class="block text-xs text-[#5C6B67] mt-3">Motivo del borrado
+        <textarea required name="motivo" minlength="3" maxlength="500" rows="2" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm"></textarea>
+      </label>
       <div id="eliminarPacienteError" class="hidden text-xs text-critical mt-2" role="alert" aria-live="assertive"></div>
       <div class="flex justify-end gap-2 mt-5">
         <button type="button" data-action="close-modal" data-modal="modal-eliminar-paciente" class="px-4 py-2 text-sm rounded-md border border-hairline">Cancelar</button>
         <button type="submit" class="px-4 py-2 text-sm rounded-md bg-critical text-white">Eliminar paciente</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="modal-restaurar-paciente" class="hidden fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4">
+    <form id="form-restaurar-paciente" class="fade-in bg-white rounded-xl w-full max-w-md p-5 shadow-xl">
+      <h3 class="font-semibold text-[15px] mb-2">Restaurar paciente</h3>
+      <p class="text-sm text-[#5C6B67] mb-4">La restauración quedará registrada en la auditoría.</p>
+      <label class="block text-xs text-[#5C6B67]">Historia clínica (HC)
+        <input required name="HC" type="text" maxlength="50" autocomplete="off" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm font-mono-data">
+      </label>
+      <label class="block text-xs text-[#5C6B67] mt-3">Motivo de la restauración
+        <textarea required name="motivo" minlength="3" maxlength="500" rows="3" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm"></textarea>
+      </label>
+      <div id="restaurarPacienteError" class="hidden text-xs text-critical mt-2" role="alert" aria-live="assertive"></div>
+      <div class="flex justify-end gap-2 mt-5">
+        <button type="button" data-action="close-modal" data-modal="modal-restaurar-paciente" class="px-4 py-2 text-sm rounded-md border border-hairline">Cancelar</button>
+        <button type="submit" class="px-4 py-2 text-sm rounded-md bg-accent text-white">Restaurar paciente</button>
       </div>
     </form>
   </div>

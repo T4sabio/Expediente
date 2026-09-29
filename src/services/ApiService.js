@@ -1,5 +1,4 @@
 import { TABLES as T, SEARCH } from '../utils/constants.js';
-import { todayISODate } from '../utils/formatters.js';
 import { ApiError, ConflictError } from '../utils/errors.js';
 import { Patient } from '../models/Patient.js';
 import { VitalSigns } from '../models/VitalSigns.js';
@@ -124,10 +123,12 @@ export class ApiService {
     const pageQueries = Object.keys(TABLE_FOR_LIST).map(listKey => this.#fetchListPage(hc, listKey, 1, size));
     const summaryQuery = this.getPatientSummary(hc);
     const activityQuery = this.getPatientLastActivity(hc);
-    const [patient, ...rest] = await Promise.all([patientQuery, ...pageQueries, summaryQuery, activityQuery]);
+    const labHistoryQuery = this.#fetchAllLabs(hc);
+    const [patient, ...rest] = await Promise.all([patientQuery, ...pageQueries, summaryQuery, activityQuery, labHistoryQuery]);
     const pages = rest.slice(0, 6);
     const summary = rest[6];
     const activity = rest[7];
+    const labHistory = rest[8];
 
     if (patient.error) throw new ApiError('No se pudo cargar el paciente seleccionado.', patient.error);
     if (!patient.data) throw new ApiError('No se encontró el paciente seleccionado.');
@@ -145,6 +146,7 @@ export class ApiService {
       vitals,
       medications: pageModels('medications', pages[1].data ?? []),
       labs: pageModels('labs', pages[2].data ?? []),
+      labHistory,
       consultations: pageModels('consultations', pages[3].data ?? []),
       cultures: pageModels('cultures', pages[4].data ?? []),
       tasks: pageModels('tasks', pages[5].data ?? []),
@@ -187,10 +189,16 @@ export class ApiService {
       p_servicio: servicio || null,
       p_limit: Math.max(1, Math.min(Number(limit) || 100, 100))
     });
-    if (!error) return (data ?? []).map(row => ({ ...row }));
+    if (!error) {
+      const rows = data ?? [];
+      if (rows.some(row => !['due_tasks', 'latest_activity_at', 'vitals_overdue', 'total_active'].every(key => Object.hasOwn(row, key)))) {
+        throw new ApiError('La función de ronda está desactualizada. Despliega la migración de ronda clínica.');
+      }
+      return rows.map(row => ({ ...row }));
+    }
     if (!RPC_MISSING.has(error.code)) throw new ApiError(error.message, error);
     this.#warnMissingRpc('ronda_hoy');
-    return [];
+    throw new ApiError('La ronda requiere desplegar la función SQL "ronda_hoy".', error);
   }
 
   async getPatientTimeline(hc, { limit = 40 } = {}) {
@@ -201,7 +209,7 @@ export class ApiService {
     if (!error) return data ?? [];
     if (!RPC_MISSING.has(error.code)) throw new ApiError(error.message, error);
     this.#warnMissingRpc('timeline_paciente');
-    return [];
+    throw new ApiError('La línea temporal requiere desplegar la función SQL "timeline_paciente".', error);
   }
 
   async getPatientLastActivity(hc) {
@@ -209,7 +217,15 @@ export class ApiService {
     if (!error) return { data: data ?? [], error: null };
     if (!RPC_MISSING.has(error.code)) return { data: null, error };
     this.#warnMissingRpc('ultima_actividad_paciente');
-    return { data: [], error: null };
+    return { data: null, error: new ApiError('La última actividad requiere desplegar la función SQL "ultima_actividad_paciente".', error) };
+  }
+
+  async recordPatientPrint(hc, recordCounts) {
+    const { error } = await this.#db.rpc('registrar_impresion_expediente', {
+      p_hc: hc,
+      p_registros: recordCounts
+    });
+    if (error) throw new ApiError('No se pudo registrar la impresión en auditoría.', error);
   }
 
   async #summaryFallback(hc) {
@@ -247,6 +263,19 @@ export class ApiService {
     // The patient RLS policy already limits deleted patients; this explicit existence
     // check is intentionally kept in the database migration, not duplicated in every query.
     return query;
+  }
+
+  async #fetchAllLabs(hc) {
+    const pageSize = 1000;
+    const rows = [];
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await this.#db.from(T.LABS).select(SELECTS.labs)
+        .eq('HC', hc).order('Fecha', { ascending: false }).range(from, from + pageSize - 1);
+      if (error) throw new ApiError(error.message, error);
+      rows.push(...(data ?? []));
+      if ((data ?? []).length < pageSize) break;
+    }
+    return pageModels('labs', rows);
   }
 
   /* ---------------------------- Tiempo real ---------------------------- */
@@ -312,21 +341,25 @@ export class ApiService {
 
   async updatePatient(hc, patient, { expectedModificadoEn } = {}) {
     let q = this.#db.from(T.PATIENTS).update(patient.toUpdateRow()).eq('HC', hc);
-    if (expectedModificadoEn) q = q.eq('Modificado_En', expectedModificadoEn);
+    if (expectedModificadoEn !== undefined) {
+      q = expectedModificadoEn === null
+        ? q.is('Modificado_En', null)
+        : q.eq('Modificado_En', expectedModificadoEn);
+    }
     const { data, error } = await q.select(PATIENT_SELECT);
     if (error) throw new ApiError(error.message, error);
-    if (expectedModificadoEn && (!data || data.length === 0)) {
+    if (!data || data.length === 0) {
       throw new ConflictError('Otra persona modificó este paciente mientras lo editabas. Recarga el expediente y vuelve a intentarlo para no perder su cambio.');
     }
     return data?.[0] ? new Patient(data[0]) : null;
   }
 
-  deletePatient(hc) {
-    return this.#run(this.#db.from(T.PATIENTS).update({ Eliminado_En: new Date().toISOString() }).eq('HC', hc).select(PATIENT_SELECT));
+  deletePatient(hc, motivo) {
+    return this.#run(this.#db.rpc('eliminar_paciente', { p_hc: hc, p_motivo: motivo }));
   }
 
-  restorePatient(hc) {
-    return this.#run(this.#db.from(T.PATIENTS).update({ Eliminado_En: null }).eq('HC', hc).select(PATIENT_SELECT));
+  restorePatient(hc, motivo) {
+    return this.#run(this.#db.rpc('restaurar_paciente', { p_hc: hc, p_motivo: motivo }));
   }
 
   addVitalSigns(v) { return this.#insert(T.VITALS, v, SELECTS.vitals, VitalSigns); }
@@ -338,7 +371,7 @@ export class ApiService {
 
   completeTask(id, expectedModificadoEn) {
     return this.#runWithConflictCheck(T.TASKS, id,
-      { Estado: 'Realizado', Fecha_Completado: new Date().toISOString() }, expectedModificadoEn,
+      { Estado: 'Realizado' }, expectedModificadoEn,
       'Otra persona ya actualizó este pendiente mientras tanto.', SELECTS.tasks, PendingTask);
   }
 
@@ -350,18 +383,18 @@ export class ApiService {
 
   suspendMedication(id, expectedModificadoEn) {
     return this.#runWithConflictCheck(T.MEDS, id,
-      { Activo: 'No', Fecha_Omision: todayISODate() }, expectedModificadoEn,
+      { Activo: 'No' }, expectedModificadoEn,
       'Otra persona ya actualizó este medicamento mientras tanto.', SELECTS.medications, Medication);
   }
 
   answerConsultation(id, respuesta, expectedModificadoEn) {
     return this.#runWithConflictCheck(T.CONSULTS, id,
-      { Respuesta_Departamento: respuesta, Fecha_Respuesta: todayISODate() }, expectedModificadoEn,
+      { Respuesta_Departamento: respuesta }, expectedModificadoEn,
       'Otra persona ya respondió o modificó esta interconsulta mientras tanto.', SELECTS.consultations, Consultation);
   }
 
   resolveCulture(id, resultado, observaciones, expectedModificadoEn) {
-    const patch = { Resultado: resultado, Fecha_Resultado: todayISODate() };
+    const patch = { Resultado: resultado };
     if (observaciones) patch.Observaciones_Microbiologia = observaciones;
     return this.#runWithConflictCheck(T.CULTURES, id, patch, expectedModificadoEn,
       'Otra persona ya registró un resultado para este cultivo mientras tanto.', SELECTS.cultures, Culture);
@@ -383,10 +416,14 @@ export class ApiService {
 
   async #runWithConflictCheck(table, id, patch, expectedModificadoEn, conflictMessage, select, Model) {
     let q = this.#db.from(table).update(patch).eq('id', id);
-    if (expectedModificadoEn) q = q.eq('Modificado_En', expectedModificadoEn);
+    if (expectedModificadoEn !== undefined) {
+      q = expectedModificadoEn === null
+        ? q.is('Modificado_En', null)
+        : q.eq('Modificado_En', expectedModificadoEn);
+    }
     const { data, error } = await q.select(select);
     if (error) throw new ApiError(error.message, error);
-    if (expectedModificadoEn && (!data || data.length === 0)) {
+    if (!data || data.length === 0) {
       throw new ConflictError(`${conflictMessage} Se recargó la información más reciente; revísala antes de intentar de nuevo.`);
     }
     return data?.[0] ? new Model(data[0]) : null;

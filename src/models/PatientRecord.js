@@ -31,11 +31,12 @@ const SORT_KEYS = Object.freeze({
 });
 
 export class PatientRecord {
-  constructor({ patient, vitals = [], medications = [], labs = [], consultations = [], cultures = [], tasks = [], summary = null, pagination = {}, timeline = [] }) {
+  constructor({ patient, vitals = [], medications = [], labs = [], labHistory = labs, consultations = [], cultures = [], tasks = [], summary = null, pagination = {}, timeline = [] }) {
     this.patient = patient;
     this.vitals = vitals;
     this.medications = medications;
     this.labs = labs;
+    this.labHistory = labHistory;
     this.consultations = consultations;
     this.cultures = cultures;
     this.tasks = tasks;
@@ -116,8 +117,12 @@ export class PatientRecord {
     const updatedMeta = meta && wasNew
       ? { ...meta, total: Number(meta.total ?? 0) + 1, totalPages: Math.max(1, Math.ceil((Number(meta.total ?? 0) + 1) / size)) }
       : meta;
+    const nextLabHistory = listKey === 'labs'
+      ? sortPage('labs', upsertById(this.labHistory ?? [], model))
+      : this.labHistory;
     return Object.assign(Object.create(Object.getPrototypeOf(this)), this, {
       [listKey]: shouldPatchVisiblePage ? (listKey === 'vitals' ? sorted.slice().reverse() : sorted) : list,
+      ...(listKey === 'labs' ? { labHistory: nextLabHistory } : {}),
       pagination: meta ? { ...this.pagination, [listKey]: updatedMeta } : this.pagination
     });
   }
@@ -159,13 +164,20 @@ export class PatientRecord {
     const updatedMeta = pageMeta
       ? { ...pageMeta, total: Math.max(0, Number(pageMeta.total ?? 0) + delta), totalPages: Math.max(1, Math.ceil(Math.max(0, Number(pageMeta.total ?? 0) + delta) / Number(pageMeta.pageSize || pageSize))) }
       : pageMeta;
+    const nextLabHistory = listKey === 'labs'
+      ? event.eventType === 'DELETE'
+        ? (this.labHistory ?? []).filter(row => Number(row.id) !== id)
+        : sortPage('labs', upsertById(this.labHistory ?? [], new Model(event.new)))
+      : this.labHistory;
     const listChanged = next !== current;
     const metaChanged = updatedMeta !== pageMeta;
-    if (!listChanged && !metaChanged) return this;
+    const historyChanged = listKey === 'labs' && nextLabHistory !== this.labHistory;
+    if (!listChanged && !metaChanged && !historyChanged) return this;
     if (listChanged) next = sortPage(listKey, next).slice(0, Number(pageMeta?.pageSize || pageSize));
     if (listKey === 'vitals' && listChanged) next = next.slice().reverse();
     return Object.assign(Object.create(Object.getPrototypeOf(this)), this, {
       [listKey]: next,
+      ...(listKey === 'labs' ? { labHistory: nextLabHistory } : {}),
       pagination: pageMeta ? { ...this.pagination, [listKey]: updatedMeta } : this.pagination
     });
   }
@@ -196,6 +208,11 @@ function sortPage(listKey, rows) {
   const key = SORT_KEYS[listKey];
   if (!key) return rows;
   return rows.slice().sort((a, b) => String(b[key] ?? '').localeCompare(String(a[key] ?? '')) || Number(b.id ?? 0) - Number(a.id ?? 0));
+}
+
+function upsertById(rows, item) {
+  const index = rows.findIndex(row => Number(row.id) === Number(item.id));
+  return index < 0 ? [...rows, item] : rows.map((row, i) => i === index ? item : row);
 }
 
 function normalizeSummary(input = {}) {

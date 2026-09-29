@@ -39,13 +39,25 @@ test('fase 3: novedades cuenta eventos posteriores a la última revisión', () =
 });
 
 test('fase 3: ronda ordena por servicio/cama y expone indicadores de revisión', () => {
+  const recentVital = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const html = renderRoundOverview([
-    { hc: '2', nombre_completo: 'Beta', servicio: 'UCI', cama: '10', active_medications: 1, open_tasks: 2, pending_cultures: 0, unanswered_consultations: 0 },
-    { hc: '1', nombre_completo: 'Alfa', servicio: 'UCI', cama: '2', active_medications: 2, open_tasks: 0, pending_cultures: 1, unanswered_consultations: 1 }
+    { hc: '2', nombre_completo: 'Beta', servicio: 'UCI', cama: '10', latest_vital_at: recentVital, active_medications: 1, open_tasks: 2, due_tasks: 2, pending_cultures: 0, unanswered_consultations: 0 },
+    { hc: '1', nombre_completo: 'Alfa', servicio: 'UCI', cama: '2', latest_vital_at: recentVital, active_medications: 2, open_tasks: 0, due_tasks: 0, pending_cultures: 1, unanswered_consultations: 1 }
   ]);
   assert.ok(html.indexOf('Alfa') < html.indexOf('Beta'));
   assert.match(html, /Ronda de hoy/);
   assert.match(html, /4 puntos a revisar/);
+});
+
+test('fase 3: ronda alerta por signos atrasados, no por tareas futuras, e indica truncamiento', () => {
+  const html = renderRoundOverview([
+    { hc: '3', nombre_completo: 'Celia', servicio: 'UCI', cama: '1', open_tasks: 1, due_tasks: 0, total_active: 101 }
+  ]);
+  assert.match(html, /muestra 1 de 101 pacientes activos/);
+  assert.match(html, /1 punto a revisar/);
+  assert.match(html, /Signos &gt;24 h/);
+  assert.doesNotMatch(html, /1 pendientes para hoy/);
+  assert.doesNotMatch(html, /Al día/);
 });
 
 test('fase 3: PatientRecord conserva timeline sin alterar el historial paginado', () => {
@@ -75,6 +87,15 @@ test('fase 3: pgTAP cubre las nuevas RPC y los índices de actividad', () => {
   assert.match(sql, /select has_function\('public', 'ronda_hoy'/);
   assert.match(sql, /select has_function\('public', 'timeline_paciente'/);
   assert.match(sql, /idx_pacientes_ronda_servicio_cama/);
+});
+
+test('fase 3: la migración corrige ronda y registra impresiones', () => {
+  const migration = read('supabase/012_round_print_audit.sql');
+  assert.match(migration, /row_number\(\) over[\s\S]*count\(\*\) over/);
+  assert.match(migration, /latest_activity_at/);
+  assert.match(migration, /vitals_overdue/);
+  assert.match(migration, /registrar_impresion_expediente/);
+  assert.match(migration, /'PRINT'/);
 });
 
 test('build: usa codeSplitting de Rolldown y no la forma objeto obsoleta de manualChunks', () => {

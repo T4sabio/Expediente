@@ -3,7 +3,7 @@ import { sectionHeader, tableWrap, emptyRow, paginationControls } from '../compo
 
 function tableRows(rows) {
   if (!rows.length) return emptyRow(5);
-  return rows.slice().reverse().map(r => `
+  return rows.map(r => `
     <tr>
       <td class="py-2 px-3 font-mono-data text-xs">${fmtDate(r.Fecha)}</td>
       <td class="py-2 px-3 font-medium">${esc(r.Tipo_Lab)}</td>
@@ -15,7 +15,7 @@ function tableRows(rows) {
 }
 
 function drawChart(charts, labs, tipo) {
-  const rows = labs.filter(l => l.Tipo_Lab === tipo && l.hasNumericValue);
+  const rows = labs.filter(l => l.Tipo_Lab === tipo && l.hasNumericValue).slice().reverse();
   charts.render('labChart', rows.map(r => fmtDate(r.Fecha)), [
     { label: tipo, data: rows.map(r => Number(r.Valor_Numerico)), borderColor: '#1F7A6C', backgroundColor: '#E4F1EE', fill: true }
   ]);
@@ -46,7 +46,7 @@ export const laboratoriosSection = {
     const tipos = record.labTypes;
     if (!tipos.length) return;
     root.querySelector('#labMetricSelect')
-      .addEventListener('change', e => drawChart(charts, record.labs, e.target.value));
-    drawChart(charts, record.labs, tipos[0]);
+      .addEventListener('change', e => drawChart(charts, record.labHistory ?? record.labs, e.target.value));
+    drawChart(charts, record.labHistory ?? record.labs, tipos[0]);
   }
 };

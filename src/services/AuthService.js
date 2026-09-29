@@ -33,7 +33,7 @@ export class AuthService {
   }
 
   async signOut() {
-    const { error } = await this.#db.auth.signOut({ scope: 'local' });
+    const { error } = await this.#db.auth.signOut({ scope: 'global' });
     if (error) throw new ApiError(error.message, error);
   }
 

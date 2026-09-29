@@ -1,5 +1,5 @@
 import { SECTIONS, SEARCH, DEFAULT_AGE_UNIT } from '../utils/constants.js';
-import { calendarDateOf, todayISODate } from '../utils/formatters.js';
+import { calendarDateOf, fmtDateTime, todayISODate } from '../utils/formatters.js';
 import { Patient } from '../models/Patient.js';
 import { listKeyForTable } from '../models/PatientRecord.js';
 import { VitalSigns } from '../models/VitalSigns.js';
@@ -24,11 +24,13 @@ export class DashboardController {
   #actions;
   #submitHandlers;
   #pendingDelete = null; // { hc, nombre } — paciente a confirmar en modal-eliminar-paciente
+  #pendingSearchPatient = null;
   #pendingEditModificadoEn = null; // sello de la última edición conocida, para detectar conflictos
   #unsubscribeRealtime = null;
   #realtimeDebounce = null;
   #idleTimer = null;
   #lastActivityAt = 0;
+  #activityStorageKey = 'ronda-clinica:last-activity';
   #signOutReason = null;
   #palette = null;
   #timelineSeq = 0;
@@ -48,12 +50,16 @@ export class DashboardController {
       'open-modal': el => { this.#resetConditionalFields(el.dataset.modal); this.#modals.open(el.dataset.modal); },
       'close-modal': el => this.#modals.close(el.dataset.modal),
       'select-patient': el => this.#selectByHC(el.dataset.hc),
+      'confirm-search-patient': () => this.#confirmSearchPatient(),
+      'cancel-search-patient': () => { this.#pendingSearchPatient = null; this.#modals.close('modal-confirmar-paciente'); },
+      'confirm-print-record': () => { this.#modals.close('modal-confirmar-impresion'); void this.#printRecord({ confirmed: true }); },
       'refresh': () => { if (this.#state.get().currentHC) this.loadPatient(this.#state.get().currentHC, { silent: true }); },
       'nuevo-paciente': () => this.#modals.open('modal-nuevo-paciente', { Edad_Unidad: this.#state.get().lastAgeUnit }),
+      'restaurar-paciente': () => this.#openRestorePatient(),
       'editar-paciente': () => this.#openEditPatient(),
       'pedir-eliminar-paciente': () => this.#openDeleteConfirm(),
       'suspender-med': el => this.#quickActionOptimistic('medications', Number(el.dataset.id),
-        { Activo: 'No', Fecha_Omision: todayISODate() },
+        { Activo: 'No' },
         expected => this.#api.suspendMedication(Number(el.dataset.id), expected), 'Medicamento suspendido'),
       'completar-pendiente': el => this.#completeTaskWithUndo(Number(el.dataset.id)),
       'descompletar-pendiente': el => this.#quickActionOptimistic('tasks', Number(el.dataset.id),
@@ -90,6 +96,7 @@ export class DashboardController {
       'form-nuevo-paciente': form => this.#createPatient(form),
       'form-editar-paciente': form => this.#updatePatient(form),
       'form-eliminar-paciente': form => this.#confirmDeletePatient(form),
+      'form-restaurar-paciente': form => this.#restorePatient(form),
       'form-login': form => this.#submitLogin(form)
     };
   }
@@ -107,8 +114,15 @@ export class DashboardController {
     this.#view.hideLoading();
 
     const session = await this.#auth.getSession();
-    if (session) await this.#onSignedIn();
-    else this.#view.showLoginScreen();
+    if (session) {
+      const lastActivityAt = this.#readActivityTimestamp();
+      const elapsed = lastActivityAt === null ? Infinity : Date.now() - lastActivityAt;
+      if (elapsed < 0 || elapsed >= DashboardController.IDLE_TIMEOUT_MS) {
+        await this.#signOut('La sesión se cerró por 15 minutos de inactividad. Inicia sesión nuevamente para continuar.');
+      } else {
+        await this.#onSignedIn(lastActivityAt);
+      }
+    } else this.#view.showLoginScreen();
 
       this.#auth.onAuthStateChange(async s => {
         if (s && !this.#state.get().authed) await this.#onSignedIn();
@@ -120,7 +134,7 @@ export class DashboardController {
     }
   }
 
-  async #onSignedIn() {
+  async #onSignedIn(lastActivityAt = null) {
     try {
       const profile = await this.#auth.getMyProfile();
       if (profile.activo === false) {
@@ -132,7 +146,7 @@ export class DashboardController {
       this.#view.hideLoginScreen();
       this.#view.clearLoginError();
       this.#view.renderUser(profile);
-      this.#startIdleWatch();
+      this.#startIdleWatch(lastActivityAt ?? Date.now());
       try {
         this.#state.set({ servicios: await this.#api.listServicios() });
       } catch (err) {
@@ -148,6 +162,9 @@ export class DashboardController {
 
   #onSignedOut() {
     this.#stopIdleWatch();
+    this.#modals.closeAll();
+    this.#view.clearProtectedData();
+    this.#clearActivityTimestamp();
     this.#loadSeq++; this.#searchSeq++;
     this.#stopRealtime();
     this.#state.set({ authed: false, record: null, currentHC: null, searchResults: null, servicios: [], round: [], timelineLoadedFor: null, syncStatus: 'idle', lastSyncedAt: null, newActivityCount: 0, lastViewedTimelineAt: 0, userId: null });
@@ -199,65 +216,114 @@ export class DashboardController {
     if (modalId === 'modal-cultivo') document.getElementById('cultivoIntervaloWrap')?.classList.add('hidden');
   }
 
-  async #printRecord() {
+  async #printRecord({ confirmed = false } = {}) {
     const state = this.#state.get();
     const record = state.record;
     if (!record) { this.#toast.show('Selecciona un paciente primero.', 'error'); return; }
-
-    let printableRecord = record;
-    if (state.timelineLoadedFor !== record.patient.HC) {
-      try {
-        const timeline = await this.#api.getPatientTimeline(record.patient.HC, { limit: 80 });
-        printableRecord = record.withTimeline(timeline);
-      } catch (err) {
-        reportError(err, { action: 'print-timeline' });
-      }
+    if (!confirmed) {
+      const count = Object.values(record.pagination ?? {}).reduce((sum, meta) => sum + (Number(meta.total) || 0), 0);
+      const summary = document.getElementById('printConfirmDetails');
+      if (summary) summary.textContent = `Se incluirán todas las páginas del historial (${count} registros), la línea temporal y el gráfico de signos vitales.`;
+      this.#modals.open('modal-confirmar-impresion');
+      return;
     }
 
-    const g = printableRecord.patient;
-    const ctx = { charts: { render() {}, destroy() {} }, today: todayISODate() };
-    const body = SECTIONS.map(s => {
-      const html = sectionViewFor(s.id).render(printableRecord, ctx);
-      return `<section class="print-section"><h2 class="print-section-title">${s.label}</h2>${html}</section>`;
-    }).join('');
+    const g = record.patient;
+    this.#toast.show('Preparando la impresión completa…', 'warn');
+    try {
+      const sections = await Promise.all(Object.entries(record.pagination ?? {}).map(async ([listKey]) => {
+        const first = await this.#api.getPatientSectionPage(g.HC, listKey, 1, { pageSize: 100 });
+        const remaining = await Promise.all(Array.from(
+          { length: Math.max(0, first.pagination.totalPages - 1) },
+          (_, index) => this.#api.getPatientSectionPage(g.HC, listKey, index + 2, { pageSize: 100 })
+        ));
+        let items = [
+          ...first.items,
+          ...remaining.flatMap(page => page.items)
+        ];
+        if (listKey === 'vitals') {
+          items = items.sort((a, b) => Date.parse(a.Fecha_Hora) - Date.parse(b.Fecha_Hora));
+        }
+        return [listKey, items, first.pagination];
+      }));
 
-    const container = document.createElement('div');
-    container.className = 'print-only';
+      let printableRecord = record;
+      for (const [listKey, items, pagination] of sections) {
+        printableRecord = printableRecord.withListPage(listKey, items, {
+          ...pagination, page: 1, pageSize: Math.max(1, items.length), total: items.length, totalPages: 1
+        });
+      }
+      const timeline = await this.#api.getPatientTimeline(g.HC, { limit: 80 });
+      printableRecord = printableRecord.withTimeline(timeline);
+      if (this.#state.get().currentHC !== g.HC) throw new Error('El expediente cambió mientras se preparaba la impresión.');
 
-    const header = document.createElement('div');
-    header.className = 'print-header';
-    const meta = document.createElement('div');
-    meta.className = 'print-meta';
-    const profile = state.userId ? document.getElementById('userNombre')?.textContent?.trim() : '';
-    meta.textContent = `CONFIDENCIAL · HC ${g.HC} · Impreso ${new Date().toLocaleString('es-GT')}${profile ? ` · ${profile}` : ''}`;
-    const name = document.createElement('h1');
-    name.className = 'print-name';
-    name.textContent = g.Nombre_Completo || 'Paciente';
-    const subline = document.createElement('div');
-    subline.className = 'print-subline';
-    subline.textContent = `${g.Servicio || '—'} · Cama ${g.Cama || '—'} · ${g.Edad || ''}`;
-    const confidentiality = document.createElement('p');
-    confidentiality.className = 'print-confidential';
-    confidentiality.textContent = 'Documento clínico confidencial. Uso restringido a personal autorizado.';
-    header.append(confidentiality);
-    header.append(meta, name, subline);
-    container.appendChild(header);
+      const vitals = printableRecord.vitals;
+      const graph = vitals.length
+        ? await this.#charts.toDataUrl(vitals.map(row => fmtDateTime(row.Fecha_Hora)), [
+          { label: 'Sistólica', data: vitals.map(row => row.PA_Sistolica), borderColor: '#1F7A6C', backgroundColor: '#1F7A6C', fill: false },
+          { label: 'Diastólica', data: vitals.map(row => row.PA_Diastolica), borderColor: '#B8863A', backgroundColor: '#B8863A', fill: false }
+        ])
+        : null;
+      const graphMarkup = graph
+        ? `<img class="print-chart" src="${graph}" alt="Gráfico de presión arterial con ${vitals.length} registros">`
+        : '<p class="print-chart-empty">Sin signos vitales para graficar.</p>';
+      const ctx = { charts: { render() {}, destroy() {} }, today: todayISODate(), pagination: null, timeline: printableRecord.timeline };
+      let body = SECTIONS.map(section => {
+        const html = sectionViewFor(section.id).render(printableRecord, ctx);
+        return `<section class="print-section"><h2 class="print-section-title">${section.label}</h2>${html}</section>`;
+      }).join('');
+      body = body.replace(/<canvas id="vitalChart"[^>]*><\/canvas>/, () => graphMarkup);
 
-    const bodyContainer = document.createElement('div');
-    bodyContainer.innerHTML = body;
-    container.appendChild(bodyContainer);
-    document.body.appendChild(container);
+      const container = document.createElement('div');
+      container.className = 'print-only';
 
-    const cleanup = () => { container.remove(); window.removeEventListener('afterprint', cleanup); };
-    window.addEventListener('afterprint', cleanup);
-    window.print();
+      const header = document.createElement('div');
+      header.className = 'print-header';
+      const meta = document.createElement('div');
+      meta.className = 'print-meta';
+      const profile = state.userId ? document.getElementById('userNombre')?.textContent?.trim() : '';
+      meta.textContent = `CONFIDENCIAL · HC ${g.HC} · Impreso ${new Date().toLocaleString('es-GT')}${profile ? ` · ${profile}` : ''}`;
+      const name = document.createElement('h1');
+      name.className = 'print-name';
+      name.textContent = g.Nombre_Completo || 'Paciente';
+      const subline = document.createElement('div');
+      subline.className = 'print-subline';
+      subline.textContent = `${g.Servicio || '—'} · Cama ${g.Cama || '—'} · ${g.Edad || ''}`;
+      const confidentiality = document.createElement('p');
+      confidentiality.className = 'print-confidential';
+      confidentiality.textContent = 'Documento clínico confidencial. Uso restringido a personal autorizado.';
+      const disclosure = document.createElement('p');
+      disclosure.className = 'print-disclosure';
+      disclosure.textContent = `Impresión completa: ${Object.values(printableRecord.pagination).reduce((sum, metaRow) => sum + metaRow.total, 0)} registros en historiales, línea temporal y gráfico de signos vitales.`;
+      header.append(confidentiality, meta, name, subline, disclosure);
+      container.appendChild(header);
+
+      const bodyContainer = document.createElement('div');
+      bodyContainer.innerHTML = body;
+      container.appendChild(bodyContainer);
+      await this.#api.recordPatientPrint(g.HC, {
+        ...Object.fromEntries(sections.map(([listKey, items]) => [listKey, items.length])),
+        timeline: timeline.length
+      });
+      if (this.#state.get().currentHC !== g.HC) throw new Error('El expediente cambió antes de iniciar la impresión.');
+      document.body.appendChild(container);
+
+      const cleanup = () => { container.remove(); window.removeEventListener('afterprint', cleanup); };
+      window.addEventListener('afterprint', cleanup);
+      window.print();
+      this.#toast.show('Solicitud de impresión completa registrada en auditoría.', 'ok');
+    } catch (err) {
+      this.#toast.show('No se pudo preparar una impresión completa: ' + this.#friendlyErrorMessage(err), 'error');
+      reportError(err, { action: 'print-record' });
+    }
   }
 
-  #startIdleWatch() {
+  #startIdleWatch(lastActivityAt) {
     this.#stopIdleWatch();
+    this.#lastActivityAt = lastActivityAt;
+    this.#writeActivityTimestamp(lastActivityAt);
     if (!globalThis.window) return;
-    this.#lastActivityAt = 0;
-    this.#touchActivity();
+    this.#scheduleIdleTimeout();
   }
 
   #stopIdleWatch() {
@@ -286,6 +352,11 @@ export class DashboardController {
     const now = Date.now();
     if (now - this.#lastActivityAt < 5000) return;
     this.#lastActivityAt = now;
+    this.#writeActivityTimestamp(now);
+    this.#scheduleIdleTimeout();
+  }
+
+  #scheduleIdleTimeout() {
     if (this.#idleTimer) globalThis.clearTimeout(this.#idleTimer);
     this.#idleTimer = globalThis.setTimeout(() => {
       if (Date.now() - this.#lastActivityAt >= DashboardController.IDLE_TIMEOUT_MS) {
@@ -294,6 +365,23 @@ export class DashboardController {
         this.#touchActivity();
       }
     }, DashboardController.IDLE_TIMEOUT_MS + 50);
+  }
+
+  #readActivityTimestamp() {
+    try {
+      const value = Number(globalThis.sessionStorage?.getItem(this.#activityStorageKey));
+      return Number.isFinite(value) && value > 0 ? value : null;
+    } catch {
+      return null;
+    }
+  }
+
+  #writeActivityTimestamp(timestamp) {
+    try { globalThis.sessionStorage?.setItem(this.#activityStorageKey, String(timestamp)); } catch {}
+  }
+
+  #clearActivityTimestamp() {
+    try { globalThis.sessionStorage?.removeItem(this.#activityStorageKey); } catch {}
   }
 
   #bindEvents() {
@@ -438,7 +526,30 @@ export class DashboardController {
   async #selectFirstMatch() {
     clearTimeout(this.#searchTimer);
     const results = await this.#runSearch();
-    if (results?.length) this.#selectPatient(results[0]);
+    if (!results?.length) return;
+    this.#pendingSearchPatient = results[0];
+    const patient = this.#pendingSearchPatient;
+    document.getElementById('searchConfirmName').textContent = patient.Nombre_Completo || 'Sin nombre';
+    document.getElementById('searchConfirmHC').textContent = patient.HC || 'Sin HC';
+    document.getElementById('searchConfirmContext').textContent = `${patient.Servicio || 'Sin servicio'} · Cama ${patient.Cama || '—'}`;
+    document.getElementById('searchConfirmInput').value = '';
+    document.getElementById('searchConfirmError').classList.add('hidden');
+    this.#modals.open('modal-confirmar-paciente');
+  }
+
+  #confirmSearchPatient() {
+    const patient = this.#pendingSearchPatient;
+    const input = document.getElementById('searchConfirmInput');
+    const error = document.getElementById('searchConfirmError');
+    if (!patient || input.value.trim() !== patient.HC) {
+      error.textContent = 'La HC no coincide. Comprueba el nombre y vuelve a escribirla.';
+      error.classList.remove('hidden');
+      input.focus();
+      return;
+    }
+    this.#pendingSearchPatient = null;
+    this.#modals.close('modal-confirmar-paciente');
+    if (patient) this.#selectPatient(patient);
   }
 
   #selectByHC(hc) {
@@ -788,7 +899,7 @@ export class DashboardController {
     if (!record) return;
     const previous = record;
     const expected = this.#findItem('tasks', id)?.Modificado_En;
-    this.#state.set({ record: record.withPatchedItem('tasks', id, { Estado: 'Realizado', Fecha_Completado: new Date().toISOString() }) });
+    this.#state.set({ record: record.withPatchedItem('tasks', id, { Estado: 'Realizado', Fecha_Completado: null }) });
     try {
       const serverItem = await this.#api.completeTask(id, expected);
       const latest = this.#state.get().record;
@@ -943,6 +1054,27 @@ export class DashboardController {
     if (err) err.classList.add('hidden');
   }
 
+  #openRestorePatient() {
+    this.#modals.open('modal-restaurar-paciente');
+    document.getElementById('restaurarPacienteError')?.classList.add('hidden');
+  }
+
+  async #restorePatient(form) {
+    const f = this.#modals.readForm(form);
+    const hc = f.HC.trim();
+    const motivo = f.motivo.trim();
+    const err = document.getElementById('restaurarPacienteError');
+    try {
+      await this.#api.restorePatient(hc, motivo);
+      this.#modals.close('modal-restaurar-paciente');
+      this.#toast.show('Paciente restaurado; motivo registrado en auditoría');
+      await this.loadPatient(hc);
+    } catch (apiErr) {
+      if (err) { err.textContent = apiErr.message; err.classList.remove('hidden'); }
+      else this.#toast.show(apiErr.message, 'error');
+    }
+  }
+
   /** Solo procede si la persona escribió el nombre exacto del paciente: barrera contra clics accidentales. */
   async #confirmDeletePatient(form) {
     const f = this.#modals.readForm(form);
@@ -952,12 +1084,12 @@ export class DashboardController {
       return;
     }
     try {
-      await this.#api.deletePatient(f._row);
+      await this.#api.deletePatient(f._row, f.motivo.trim());
       this.#pendingDelete = null;
       this.#stopRealtime();
       this.#modals.close('modal-eliminar-paciente');
       this.#modals.close('modal-editar-paciente');
-      this.#toast.show('Paciente eliminado (puede restaurarse desde la base de datos si fue un error)');
+      this.#toast.show('Paciente eliminado; motivo registrado en auditoría');
       this.#loadSeq++;
       this.#state.set({ record: null, currentHC: null });
       this.#view.setSearchText('');

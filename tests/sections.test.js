@@ -8,6 +8,7 @@ import { Patient } from '../src/models/Patient.js';
 import { Medication } from '../src/models/Medication.js';
 import { LabResult, PendingTask } from '../src/models/ClinicalRecords.js';
 import { VitalSigns } from '../src/models/VitalSigns.js';
+import { laboratoriosSection } from '../src/views/sections/laboratorios.js';
 
 const ctx = { today: '2026-09-24', charts: { render() {} } };
 
@@ -35,6 +36,22 @@ test('AppState notifica solo cuando algo cambia', () => {
   s.set({ a: 2 });
   assert.equal(calls, 1);
   assert.equal(s.get().a, 2);
+});
+
+test('laboratorios: tabla reciente primero y gráfico usa historial completo cronológico', () => {
+  const rendered = [];
+  const charts = { render: (...args) => rendered.push(args) };
+  const recent = new LabResult({ Fecha: '2026-09-24', Tipo_Lab: 'Creatinina', Valor_Numerico: 2 });
+  const older = new LabResult({ Fecha: '2026-09-01', Tipo_Lab: 'Creatinina', Valor_Numerico: 1 });
+  const record = new PatientRecord({
+    patient: new Patient({ HC: '1', Nombre_Completo: 'Ana' }),
+    labs: [recent], labHistory: [recent, older]
+  });
+  const html = laboratoriosSection.render(record, {});
+  laboratoriosSection.mount({ querySelector: () => ({ addEventListener() {} }) }, record, { charts });
+  assert.ok(html.indexOf('24/09/2026') < html.indexOf('01/09/2026') || !html.includes('01/09/2026'));
+  assert.deepEqual(rendered[0][1], ['01/09/2026', '24/09/2026']);
+  assert.deepEqual(rendered[0][2][0].data, [1, 2]);
 });
 
 test('ApiService cae a búsqueda ILIKE si falta la función SQL', async () => {

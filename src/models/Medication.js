@@ -1,5 +1,5 @@
 import { PROLONGED_TREATMENT_DAYS } from '../utils/constants.js';
-import { calendarDateOf, daysBetween, todayISODate } from '../utils/formatters.js';
+import { calendarDateOf, calendarDaysDiff, todayISODate } from '../utils/formatters.js';
 import { ValidationError } from '../utils/errors.js';
 
 export class Medication {
@@ -19,11 +19,12 @@ export class Medication {
     const start = calendarDateOf(this.Fecha_Inicio);
     if (!start) return Number(this.Dias_Tratamiento) || 0;
     const end = this.Fecha_Omision ? calendarDateOf(this.Fecha_Omision) : today;
-    return daysBetween(start, end) ?? 0;
+    const elapsedDays = calendarDaysDiff(start, end);
+    return elapsedDays === null || elapsedDays < 0 ? 0 : elapsedDays + 1;
   }
 
   isProlonged(today) {
-    return this.isActive && this.treatmentDays(today) >= PROLONGED_TREATMENT_DAYS;
+    return this.isActive && this.isTracked && this.treatmentDays(today) >= PROLONGED_TREATMENT_DAYS;
   }
 
   /** Marca de "requiere seguimiento de días de cobertura" (típicamente antibióticos). */
@@ -39,7 +40,9 @@ export class Medication {
    */
   coverageText(today = todayISODate()) {
     const days = this.treatmentDays(today);
-    const dayPhrase = days <= 1 ? 'cumpliendo hoy su primer día de cobertura' : `cumpliendo hoy su día ${days} de cobertura`;
+    const dayPhrase = days === 1
+      ? 'cumpliendo hoy su primer día de cobertura'
+      : days > 1 ? `cumpliendo hoy su día ${days} de cobertura` : 'sin días de cobertura cumplidos';
     const horas = Number(this.Frecuencia_Horas);
     const freqSuffix = Number.isFinite(horas) && horas > 0 ? ` cada ${horas} horas` : '';
     return `${this.Nombre_Medicamento} ${this.Dosis_Frecuencia}${freqSuffix}, ${dayPhrase}`;

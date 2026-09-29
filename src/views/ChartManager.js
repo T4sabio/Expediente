@@ -39,6 +39,32 @@ export class ChartManager {
     });
   }
 
+  async toDataUrl(labels, datasets) {
+    const Chart = await this.#getChart();
+    const canvas = document.createElement('canvas');
+    canvas.width = 1400;
+    canvas.height = 480;
+    const chart = new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: { labels, datasets },
+      options: {
+        responsive: false, animation: false, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { display: datasets.length > 1 } },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: { size: 10 }, maxTicksLimit: 18 } },
+          y: { grid: { color: '#EEF2F1' }, ticks: { font: { size: 12 } } }
+        },
+        elements: { point: { radius: 2 }, line: { tension: 0.3 } }
+      }
+    });
+    try {
+      return canvas.toDataURL('image/png');
+    } finally {
+      chart.destroy();
+    }
+  }
+
   destroy() {
     this.#chart?.destroy();
     this.#chart = null;
