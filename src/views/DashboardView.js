@@ -164,11 +164,13 @@ export class DashboardView {
 
   /* ---- paciente ---- */
   showEmptyState() {
+    this.#el.round?.classList.remove('hidden');
     this.#el.patientView.classList.add('hidden');
     this.#el.empty.classList.remove('hidden');
   }
 
   showPatientView() {
+    this.#el.round?.classList.add('hidden');
     this.#el.empty.classList.add('hidden');
     this.#el.patientView.classList.remove('hidden');
   }

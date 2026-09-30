@@ -9,6 +9,7 @@ import { Medication } from '../src/models/Medication.js';
 import { Culture, LabResult, PendingTask } from '../src/models/ClinicalRecords.js';
 import { VitalSigns } from '../src/models/VitalSigns.js';
 import { laboratoriosSection } from '../src/views/sections/laboratorios.js';
+import { DashboardView } from '../src/views/DashboardView.js';
 
 const ctx = { today: '2026-09-24', charts: { render() {} } };
 
@@ -36,6 +37,31 @@ test('AppState notifica solo cuando algo cambia', () => {
   s.set({ a: 2 });
   assert.equal(calls, 1);
   assert.equal(s.get().a, 2);
+});
+
+test('DashboardView alterna entre ronda general y expediente seleccionado', () => {
+  const createElement = initialHidden => {
+    const classes = new Set(initialHidden ? ['hidden'] : []);
+    return { classList: {
+      add: value => classes.add(value),
+      remove: value => classes.delete(value),
+      contains: value => classes.has(value)
+    } };
+  };
+  const elements = {
+    roundContainer: createElement(false),
+    emptyState: createElement(false),
+    patientView: createElement(true)
+  };
+  const view = new DashboardView({ getElementById: id => elements[id] ?? null });
+  view.showPatientView();
+  assert.equal(elements.roundContainer.classList.contains('hidden'), true);
+  assert.equal(elements.emptyState.classList.contains('hidden'), true);
+  assert.equal(elements.patientView.classList.contains('hidden'), false);
+  view.showEmptyState();
+  assert.equal(elements.roundContainer.classList.contains('hidden'), false);
+  assert.equal(elements.emptyState.classList.contains('hidden'), false);
+  assert.equal(elements.patientView.classList.contains('hidden'), true);
 });
 
 test('laboratorios: tabla reciente primero y gráfico usa historial completo cronológico', () => {
