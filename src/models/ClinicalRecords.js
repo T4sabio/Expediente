@@ -1,6 +1,8 @@
 import { blankToNull, daysBetween, isHttpUrl, todayISODate, calendarDaysDiff, calendarDateOf, wallTimeToOffsetISO } from '../utils/formatters.js';
 import { ValidationError } from '../utils/errors.js';
 
+const MAX_CULTURE_INTERVAL_HOURS = 720;
+
 const required = (value, message) => {
   const t = String(value ?? '').trim();
   if (!t) throw new ValidationError(message);
@@ -78,8 +80,8 @@ export class Culture extends BaseRecord {
     const periodico = form.Es_Periodico === 'on' || form.Es_Periodico === true;
     const intervalo = String(form.Intervalo_Horas ?? '').trim();
     const intervaloHoras = intervalo === '' ? null : Number(intervalo);
-    if (periodico && (!Number.isInteger(intervaloHoras) || intervaloHoras < 1 || intervaloHoras > 32767)) {
-      throw new ValidationError('El intervalo debe ser un número entero de horas mayor que cero.');
+    if (periodico && (!Number.isInteger(intervaloHoras) || intervaloHoras < 1 || intervaloHoras > MAX_CULTURE_INTERVAL_HOURS)) {
+      throw new ValidationError(`El intervalo debe estar entre 1 y ${MAX_CULTURE_INTERVAL_HOURS} horas.`);
     }
     return new Culture({
       HC: hc,

@@ -85,15 +85,15 @@ begin
   foreach t in array array['DB_Pacientes','DB_SignosVitales','DB_Medicamentos',
                             'DB_Laboratorios','DB_Consultas','DB_Cultivos','DB_Pendientes']
   loop
-    execute format('alter table public.%I add column if not exists "Creado_Por" uuid references auth.users(id)', t);
-    execute format('alter table public.%I add column if not exists "Modificado_Por" uuid references auth.users(id)', t);
+    execute format('alter table public.%I add column if not exists "Creado_Por" uuid references auth.users(id) on delete set null', t);
+    execute format('alter table public.%I add column if not exists "Modificado_Por" uuid references auth.users(id) on delete set null', t);
     execute format('alter table public.%I add column if not exists "Modificado_En" timestamptz', t);
   end loop;
 end $$;
 
 -- Borrado lógico: solo aplica a pacientes (las tablas hijas no se borran solas).
+alter table public."DB_Pacientes" add column if not exists "Eliminado_Por" uuid references auth.users(id) on delete set null;
 alter table public."DB_Pacientes" add column if not exists "Eliminado_En" timestamptz;
-alter table public."DB_Pacientes" add column if not exists "Eliminado_Por" uuid references auth.users(id);
 
 create index if not exists idx_pacientes_no_eliminados
   on public."DB_Pacientes" (("Eliminado_En" is null));
@@ -142,7 +142,7 @@ create table if not exists public.audit_log (
   tabla             text not null,
   registro_id       text not null,
   accion            text not null check (accion in ('INSERT', 'UPDATE')),
-  usuario_id        uuid references auth.users(id),
+  usuario_id        uuid references auth.users(id) on delete set null,
   datos_anteriores  jsonb,
   datos_nuevos      jsonb,
   creado_en         timestamptz not null default now()

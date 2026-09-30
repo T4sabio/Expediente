@@ -32,8 +32,8 @@ export class AuthService {
     return data.session;
   }
 
-  async signOut() {
-    const { error } = await this.#db.auth.signOut({ scope: 'global' });
+  async signOut({ scope = 'local' } = {}) {
+    const { error } = await this.#db.auth.signOut({ scope });
     if (error) throw new ApiError(error.message, error);
   }
 

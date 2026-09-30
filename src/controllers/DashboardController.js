@@ -532,8 +532,8 @@ export class DashboardController {
       this.#restoreSectionDetailsAndFocus(uiState);
       measurePerformance(`section-render-${currentSection}`, 'section-render-start');
     } catch (err) {
-      console.error(err);
-      this.#toast.show('No se pudo mostrar la sección: ' + err.message, 'error');
+      reportError(err, { origin: 'render-section', section: currentSection });
+      this.#toast.show('No se pudo mostrar la sección. Intenta nuevamente.', 'error');
     }
   }
 
@@ -607,7 +607,8 @@ export class DashboardController {
       );
       return results;
     } catch (err) {
-      if (seq === this.#searchSeq) this.#toast.show('Error en la búsqueda: ' + err.message, 'error');
+      if (seq === this.#searchSeq) this.#toast.show('No se pudo completar la búsqueda. Intenta nuevamente.', 'error');
+      reportError(err, { origin: 'search', query, servicio });
       return null;
     } finally {
       if (seq === this.#searchSeq) this.#view.hideSearchSpinner();
@@ -682,7 +683,8 @@ export class DashboardController {
       if (!silent) this.#watchRealtime(hc);
     } catch (err) {
       if (seq !== this.#loadSeq) return;
-      this.#toast.show('Error al cargar el paciente: ' + err.message, 'error', { persistent: true, id: 'patient-load-error' });
+      this.#toast.show('No se pudo cargar el paciente. Intenta nuevamente.', 'error', { persistent: true, id: 'patient-load-error' });
+      reportError(err, { origin: 'load-patient', hc });
       if (!silent) { this.#state.set({ currentHC: null }); this.#view.showEmptyState(); }
     }
   }
@@ -1144,9 +1146,14 @@ export class DashboardController {
 
   /** Mensaje mostrado a la persona: distingue "sin conexión" de un error de negocio/servidor. */
   #friendlyErrorMessage(err) {
-    return isNetworkError(err)
-      ? 'Sin conexión: no se pudo confirmar el guardado. Verifica el expediente antes de reintentar.'
-      : err.message;
+    if (!err) return 'No se pudo completar la operación. Intenta nuevamente.';
+    if (isNetworkError(err)) {
+      return 'Sin conexión: no se pudo confirmar el guardado. Verifica el expediente antes de reintentar.';
+    }
+    if (err instanceof Error && /(?:obligat|inválid|debe|incorrect|no coincide|ya existe|no se puede)/i.test(err.message)) {
+      return err.message;
+    }
+    return 'No se pudo completar la operación. Intenta nuevamente.';
   }
 
   async #createPatient(form) {

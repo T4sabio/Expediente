@@ -87,7 +87,7 @@ test('Medication: reactivar ignora una fecha de omisión obsoleta', () => {
   assert.equal(reactivated.treatmentDays('2026-09-10'), 10);
 });
 
-test('Culture: periodicidad respeta intervalos de 8 y 12 horas', async () => {
+test('Culture: periodicidad respeta intervalos de 8 y 12 horas y valida el máximo de 720 horas', async () => {
   const { Culture } = await import('../src/models/ClinicalRecords.js');
   const now = new Date('2026-09-24T10:00:00-06:00');
   const culture = (hours, sentAt) => new Culture({
@@ -100,6 +100,20 @@ test('Culture: periodicidad respeta intervalos de 8 y 12 horas', async () => {
   ], '2026-09-24', now);
   assert.equal(statuses.find(status => status.tipo === 'Cultivo 8').overdue, true);
   assert.equal(statuses.find(status => status.tipo === 'Cultivo 12').overdue, false);
+
+  assert.doesNotThrow(() => Culture.fromForm({
+    Tipo_Cultivo: 'Hemocultivo',
+    Fecha_Envio_Hora: '2026-09-24T08:00',
+    Es_Periodico: true,
+    Intervalo_Horas: 720
+  }, 'HC-1'));
+
+  assert.throws(() => Culture.fromForm({
+    Tipo_Cultivo: 'Hemocultivo',
+    Fecha_Envio_Hora: '2026-09-24T08:00',
+    Es_Periodico: true,
+    Intervalo_Horas: 721
+  }, 'HC-1'), /intervalo/i);
 });
 
 test('Patient: arma la edad y valida obligatorios', () => {

@@ -59,9 +59,9 @@ test('getMyProfile: con fila existente, devuelve el rol real', async () => {
 });
 
 
-test('signOut: revoca las sesiones en el servidor', async () => {
+test('signOut: solo bloquea la sesión actual, sin revocar todas las sesiones del usuario', async () => {
   const client = makeAuthClient();
   const auth = new AuthService(client);
   await auth.signOut();
-  assert.deepEqual(client._test.signOutCalls, [{ scope: 'global' }]);
+  assert.deepEqual(client._test.signOutCalls, [{ scope: 'local' }]);
 });
