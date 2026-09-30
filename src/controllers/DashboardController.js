@@ -682,7 +682,7 @@ export class DashboardController {
       if (!silent) this.#watchRealtime(hc);
     } catch (err) {
       if (seq !== this.#loadSeq) return;
-      this.#toast.show('Error al cargar el paciente: ' + err.message, 'error');
+      this.#toast.show('Error al cargar el paciente: ' + err.message, 'error', { persistent: true, id: 'patient-load-error' });
       if (!silent) { this.#state.set({ currentHC: null }); this.#view.showEmptyState(); }
     }
   }

@@ -134,13 +134,13 @@ export class ApiService {
     const activity = rest[listKeys.length + 1];
     const labHistory = rest[listKeys.length + 2];
 
-    if (patient.error) throw new ApiError('No se pudo cargar el paciente seleccionado.', patient.error);
+    if (patient.error) throw new ApiError(queryFailureMessage('No se pudo cargar el paciente seleccionado', patient.error), patient.error);
     if (!patient.data) throw new ApiError('No se encontró el paciente seleccionado.');
     for (const page of pages) {
-      if (page.error) throw new ApiError(page.error.message, page.error);
+      if (page.error) throw new ApiError(queryFailureMessage('No se pudo cargar una lista del expediente', page.error), page.error);
     }
-    if (summary.error) throw new ApiError('No se pudo cargar el resumen clínico.', summary.error);
-    if (activity.error) throw new ApiError('No se pudo cargar la última actividad del expediente.', activity.error);
+    if (summary.error) throw new ApiError(queryFailureMessage('No se pudo cargar el resumen clínico', summary.error), summary.error);
+    if (activity.error) throw new ApiError(queryFailureMessage('No se pudo cargar la última actividad del expediente', activity.error), activity.error);
 
     const vitals = pageModels('vitals', pagesByKey.vitals.data ?? []);
     // La página 1 se pide descendente para priorizar actualidad; el modelo conserva orden cronológico para el gráfico.
@@ -493,6 +493,17 @@ export class ApiService {
 
 function pageModels(listKey, rows) {
   return rows.map(row => modelForList(listKey, row));
+}
+
+function queryFailureMessage(action, error) {
+  const detail = error?.message || 'Error desconocido de Supabase.';
+  const code = error?.code ? ` (${error.code})` : '';
+  const missingColumn = ['42703', 'PGRST204'].includes(error?.code)
+    || /column .* does not exist|could not find .* column|schema cache/i.test(detail);
+  const hint = missingColumn
+    ? ' Verifica que ejecutaste las migraciones 014 y 015; si ya están aplicadas, recarga la caché de esquema con NOTIFY pgrst, \'reload schema\'.'
+    : '';
+  return `${action}: ${detail}${code}.${hint}`;
 }
 
 function normalizePageSize(value) {

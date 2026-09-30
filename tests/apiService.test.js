@@ -149,6 +149,20 @@ test('getPatientRecord: paciente inexistente lanza un error legible', async () =
   await assert.rejects(() => api.getPatientRecord('no-existe'), /No se encontró el paciente seleccionado/);
 });
 
+test('getPatientRecord: columna ausente identifica las migraciones y la caché de esquema', async () => {
+  const db = new MockSupabase({
+    tables: { DB_Pacientes: { data: null, error: { code: 'PGRST204', message: 'Could not find the Estado_Episodio column in the schema cache' } } },
+    rpcs: {
+      resumen_paciente: { data: {}, error: null },
+      ultima_actividad_paciente: { data: [], error: null }
+    }
+  });
+  await assert.rejects(
+    () => new ApiService(db).getPatientRecord('HC-1'),
+    /Estado_Episodio.*PGRST204.*migraciones 014 y 015.*NOTIFY pgrst/
+  );
+});
+
 test('getPatientRecord: un bloqueo de RLS en cualquier tabla hija falla en voz alta (no oculta datos)', async () => {
   const db = new MockSupabase({
     rpcs: { resumen_paciente: { data: { counts: {}, labTypes: [], latestVital: null }, error: null } },
