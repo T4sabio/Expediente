@@ -45,6 +45,7 @@ export const createInitialState = (ui = {}) => ({
   newActivityCount: 0,
   lastViewedTimelineAt: 0,
   userId: null,
+  role: null,
   density: ui.density ?? 'normal',
   highContrast: Boolean(ui.highContrast)
 });

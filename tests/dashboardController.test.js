@@ -179,6 +179,45 @@ test('bloqueo: cierra modales y elimina los datos clínicos del DOM', async () =
   assert.ok(view.calls.some(c => c[0] === 'clearProtectedData'));
 });
 
+test('enfermería no puede abrir acciones de edición demográfica ni suspensión', async () => {
+  let medicationAdded = false;
+  const { controller, modals, toast } = setup({
+    session: { user: { id: 'nurse-1' } },
+    auth: { getMyProfile: async () => ({ nombre: 'Enfermería', rol: 'enfermeria', activo: true }) },
+    api: { addMedication: async () => { medicationAdded = true; } }
+  });
+  await controller.init();
+  click({ dataset: { action: 'editar-paciente' } });
+  click({ dataset: { action: 'suspender-med', id: '4' } });
+  const form = fakeForm('form-med');
+  form.elements = { Activo: { value: 'No' } };
+  submit(form);
+  assert.equal(modals.calls.some(c => c[0] === 'open'), false);
+  assert.equal(toast.calls.filter(c => c[1] === 'error').length, 3);
+  assert.equal(medicationAdded, false);
+});
+
+test('Realtime no cuenta los cambios propios como novedades', async () => {
+  let onRealtime;
+  const record = new PatientRecord({ patient: new Patient({ HC: 'HC-8', Nombre_Completo: 'Ana' }) });
+  const { controller, state } = setup({
+    session: { user: { id: 'user-8' } },
+    api: {
+      getPatientRecord: async () => record,
+      subscribeToPatient: (_hc, onChange) => { onRealtime = onChange; return () => {}; },
+      getPatientSummary: async () => ({ data: { counts: {}, labTypes: [] }, error: null })
+    }
+  });
+  await controller.init();
+  await controller.loadPatient('HC-8');
+  const eventAt = new Date(Date.now() + 1000).toISOString();
+  onRealtime({ table: 'DB_Pendientes', eventType: 'INSERT', commit_timestamp: eventAt, new: {
+    id: 21, HC: 'HC-8', Descripcion_Tarea: 'Control propio', Estado: 'Pendiente',
+    Fecha_Solicitud: '2026-09-29', Modificado_Por: 'user-8', Modificado_En: eventAt
+  } });
+  assert.equal(state.get().newActivityCount, 0);
+});
+
 test('login: credenciales incorrectas muestran el error en la pantalla de login, no un toast genérico', async () => {
   const { controller, view } = setup({
     session: null,

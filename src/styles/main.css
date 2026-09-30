@@ -19,14 +19,24 @@ table.clinical tbody tr:hover { background: #FAFCFC; }
 .chart-wrap { position: relative; height: 300px; }
 @media (max-width: 640px) { .chart-wrap { height: 240px; } }
 
-/* Rol de solo lectura: los puntos de entrada de escritura se ocultan en el cliente.
-   La barrera real es RLS en el servidor (supabase/002_auth_rls_audit.sql); esto
-   solo evita mostrar acciones que de todos modos el servidor rechazaría. */
+/* Los controles acompañan a los permisos efectivos definidos en Supabase. */
+body.role-lectura [data-action="open-modal"],
 body.role-lectura [data-action="nuevo-paciente"],
 body.role-lectura [data-action="editar-paciente"],
-body.role-lectura form button[type="submit"] { display: none; }
-body:not(.role-medico) [data-action="restaurar-paciente"],
-body:not(.role-medico) [data-action="pedir-eliminar-paciente"] { display: none; }
+body.role-lectura [data-action="pedir-eliminar-paciente"],
+body.role-lectura [data-action="restaurar-paciente"],
+body.role-lectura [data-action="suspender-med"],
+body.role-lectura [data-action="completar-pendiente"],
+body.role-lectura [data-action="descompletar-pendiente"],
+body.role-lectura [data-action="responder-consulta"],
+body.role-lectura [data-action="resultado-cultivo"],
+body.role-lectura #form-pendiente-rapido,
+body.role-lectura form button[type="submit"] { display: none !important; }
+body.role-enfermeria [data-action="nuevo-paciente"],
+body.role-enfermeria [data-action="editar-paciente"],
+body.role-enfermeria [data-action="pedir-eliminar-paciente"],
+body.role-enfermeria [data-action="restaurar-paciente"],
+body.role-enfermeria [data-action="suspender-med"] { display: none !important; }
 
 /* Exportar/imprimir expediente: se arma un contenedor temporal con todas las
    secciones y se oculta el resto de la página mientras se imprime. */

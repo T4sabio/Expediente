@@ -13,7 +13,7 @@ const SERVICES_CACHE_MS = 5 * 60 * 1000;
 const PATIENT_SELECT = 'HC,Nombre_Completo,Servicio,Cama,Edad,Fecha_Ingreso,Num_RayosX,Motivo_Consulta,Diagnosticos,Modificado_En';
 const SELECTS = Object.freeze({
   vitals: 'id,HC,Fecha_Hora,PA_Sistolica,PA_Diastolica,Frecuencia_Cardiaca,SpO2,Temperatura,Frecuencia_Respiratoria,PAM,Modificado_En',
-  medications: 'id,HC,Nombre_Medicamento,Dosis_Frecuencia,Fecha_Inicio,Fecha_Omision,Activo,Dias_Tratamiento,Requiere_Seguimiento_Dias,Frecuencia_Horas,Modificado_En',
+  medications: 'id,HC,Nombre_Medicamento,Dosis_Frecuencia,Fecha_Inicio,Fecha_Omision,Activo,Dias_Tratamiento,Requiere_Seguimiento_Dias,Frecuencia_Horas,Motivo_Suspension,Modificado_En',
   labs: 'id,HC,Fecha,Tipo_Lab,Valor_Numerico,Resultado_Texto,Enlace_PDF_Hospital,Modificado_En',
   consultations: 'id,HC,Departamento_Consultado,Fecha_Envio,Fecha_Respuesta,Respuesta_Departamento,Modificado_En',
   cultures: 'id,HC,Tipo_Cultivo,Fecha_Envio,Fecha_Resultado,Resultado,Observaciones_Microbiologia,Es_Periodico,Intervalo_Horas,Modificado_En',
@@ -228,6 +228,19 @@ export class ApiService {
     if (error) throw new ApiError('No se pudo registrar la impresión en auditoría.', error);
   }
 
+  async recordPatientRead(hc) {
+    const { error } = await this.#db.rpc('registrar_lectura_expediente', { p_hc: hc });
+    if (error) throw new ApiError('No se pudo registrar la lectura en auditoría.', error);
+  }
+
+  async recordPatientExport(hc, recordCounts) {
+    const { error } = await this.#db.rpc('registrar_exporte_expediente', {
+      p_hc: hc,
+      p_registros: recordCounts
+    });
+    if (error) throw new ApiError('No se pudo registrar la exportación en auditoría.', error);
+  }
+
   async #summaryFallback(hc) {
     const countQuery = async (listKey, filter) => {
       let q = this.#db.from(TABLE_FOR_LIST[listKey]).select('id', { count: 'exact', head: true }).eq('HC', hc);
@@ -362,12 +375,12 @@ export class ApiService {
     return this.#run(this.#db.rpc('restaurar_paciente', { p_hc: hc, p_motivo: motivo }));
   }
 
-  addVitalSigns(v) { return this.#insert(T.VITALS, v, SELECTS.vitals, VitalSigns); }
-  addMedication(m) { return this.#insert(T.MEDS, m, SELECTS.medications, Medication); }
-  addLab(l) { return this.#insert(T.LABS, l, SELECTS.labs, LabResult); }
-  addConsultation(c) { return this.#insert(T.CONSULTS, c, SELECTS.consultations, Consultation); }
-  addCulture(c) { return this.#insert(T.CULTURES, c, SELECTS.cultures, Culture); }
-  addTask(t) { return this.#insert(T.TASKS, t, SELECTS.tasks, PendingTask); }
+  addVitalSigns(v, options) { return this.#insert(T.VITALS, v, SELECTS.vitals, VitalSigns, options); }
+  addMedication(m, options) { return this.#insert(T.MEDS, m, SELECTS.medications, Medication, options); }
+  addLab(l, options) { return this.#insert(T.LABS, l, SELECTS.labs, LabResult, options); }
+  addConsultation(c, options) { return this.#insert(T.CONSULTS, c, SELECTS.consultations, Consultation, options); }
+  addCulture(c, options) { return this.#insert(T.CULTURES, c, SELECTS.cultures, Culture, options); }
+  addTask(t, options) { return this.#insert(T.TASKS, t, SELECTS.tasks, PendingTask, options); }
 
   completeTask(id, expectedModificadoEn) {
     return this.#runWithConflictCheck(T.TASKS, id,
@@ -381,9 +394,15 @@ export class ApiService {
       'Otra persona ya actualizó este pendiente mientras tanto.', SELECTS.tasks, PendingTask);
   }
 
-  suspendMedication(id, expectedModificadoEn) {
+  suspendMedication(id, expectedModificadoEn, motivo) {
     return this.#runWithConflictCheck(T.MEDS, id,
-      { Activo: 'No' }, expectedModificadoEn,
+      { Activo: 'No', Motivo_Suspension: motivo }, expectedModificadoEn,
+      'Otra persona ya actualizó este medicamento mientras tanto.', SELECTS.medications, Medication);
+  }
+
+  unsuspendMedication(id, expectedModificadoEn) {
+    return this.#runWithConflictCheck(T.MEDS, id,
+      { Activo: 'Sí', Motivo_Suspension: null }, expectedModificadoEn,
       'Otra persona ya actualizó este medicamento mientras tanto.', SELECTS.medications, Medication);
   }
 
@@ -402,8 +421,15 @@ export class ApiService {
 
   /* ---------------------------- Internos ---------------------------- */
 
-  async #insert(table, entity, select, Model) {
-    const { data, error } = await this.#db.from(table).insert([entity.toRow()]).select(select).single();
+  async #insert(table, entity, select, Model, { idempotencyKey } = {}) {
+    const row = entity.toRow();
+    if (idempotencyKey) row.Idempotency_Key = idempotencyKey;
+    const { data, error } = await this.#db.from(table).insert([row]).select(select).single();
+    if (error && error.code === '23505' && idempotencyKey) {
+      const duplicate = await this.#db.from(table).select(select)
+        .eq('HC', row.HC).eq('Idempotency_Key', idempotencyKey).maybeSingle();
+      if (!duplicate.error && duplicate.data) return new Model(duplicate.data);
+    }
     if (error) throw new ApiError(error.message, error);
     return data ? new Model(data) : null;
   }

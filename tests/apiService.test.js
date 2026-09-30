@@ -166,6 +166,30 @@ test('addVitalSigns / addMedication: insertan sin lanzar cuando el servidor no r
   assert.equal(result.id, 1);
 });
 
+test('addMedication: un reintento con la misma clave devuelve la fila ya insertada', async () => {
+  let insertedRow;
+  const db = {
+    from() {
+      let isInsert = false;
+      const builder = {
+        insert: rows => { isInsert = true; insertedRow = rows[0]; return builder; },
+        select: () => builder, eq: () => builder, maybeSingle: () => builder, single: () => builder,
+        then(resolve, reject) {
+          const result = isInsert
+            ? { data: null, error: { code: '23505', message: 'duplicate key' } }
+            : { data: { id: 12, HC: 'HC-2', Nombre_Medicamento: 'Ceftriaxona' }, error: null };
+          return Promise.resolve(result).then(resolve, reject);
+        }
+      };
+      return builder;
+    }
+  };
+  const api = new ApiService(db);
+  const medication = await api.addMedication({ toRow: () => ({ HC: 'HC-2', Nombre_Medicamento: 'Ceftriaxona' }) }, { idempotencyKey: 'retry-1' });
+  assert.equal(insertedRow.Idempotency_Key, 'retry-1');
+  assert.equal(medication.id, 12);
+});
+
 test('deletePatient / restorePatient: usan RPC con motivo y devuelven la HC afectada', async () => {
   const db = new MockSupabase({ rpcs: {
     eliminar_paciente: ({ p_hc }) => ({ data: p_hc, error: null }),
@@ -189,6 +213,20 @@ test('recordPatientPrint: registra la HC y el conteo de registros mediante RPC',
     name: 'registrar_impresion_expediente',
     params: { p_hc: 'HC-9', p_registros: { vitals: 30, labs: 4 } }
   });
+});
+
+test('recordPatientRead / recordPatientExport: registran acceso y salida clínica', async () => {
+  const db = new MockSupabase({ rpcs: {
+    registrar_lectura_expediente: { data: null, error: null },
+    registrar_exporte_expediente: { data: null, error: null }
+  } });
+  const api = new ApiService(db);
+  await api.recordPatientRead('HC-8');
+  await api.recordPatientExport('HC-8', { vitals: 12 });
+  assert.deepEqual(db.calls.rpc, [
+    { name: 'registrar_lectura_expediente', params: { p_hc: 'HC-8' } },
+    { name: 'registrar_exporte_expediente', params: { p_hc: 'HC-8', p_registros: { vitals: 12 } } }
+  ]);
 });
 
 /* ---------------------------- Concurrencia (2.5) ---------------------------- */

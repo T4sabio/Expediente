@@ -74,6 +74,7 @@
           <option value="">Todos los servicios</option>
         </select>
       </div>
+      <datalist id="serviceList"></datalist>
 
       <button data-action="nuevo-paciente" class="flex items-center gap-1.5 px-3 py-2 rounded-md bg-accent hover:bg-accent/80 text-sm font-medium transition">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="white" stroke-width="2.2" stroke-linecap="round"/></svg>
@@ -196,7 +197,7 @@
         <label class="text-xs text-[#5C6B67]">Estado
           <select name="Activo" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
             <option value="Sí">Activo</option>
-            <option value="No">Inactivo</option>
+            <option id="medInactiveOption" value="No">Inactivo</option>
           </select>
         </label>
         <label class="col-span-2 flex items-center gap-2 text-xs text-[#5C6B67] mt-1">
@@ -210,6 +211,21 @@
       <div class="flex justify-end gap-2 mt-5">
         <button type="button" data-action="close-modal" data-modal="modal-med" class="px-4 py-2 text-sm rounded-md border border-hairline">Cancelar</button>
         <button type="submit" class="px-4 py-2 text-sm rounded-md bg-accent text-white">Guardar</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="modal-suspender-med" class="hidden fixed inset-0 z-40 modal-backdrop flex items-center justify-center p-4">
+    <form id="form-suspender-med" class="fade-in bg-white rounded-xl w-full max-w-md p-5 shadow-xl">
+      <h3 class="font-semibold text-[15px] mb-2">Suspender medicamento</h3>
+      <input type="hidden" name="_row">
+      <p class="text-sm text-[#5C6B67] mb-4">Medicamento: <strong id="suspenderMedNombre" class="text-ink"></strong></p>
+      <label class="block text-xs text-[#5C6B67]">Motivo de suspensión
+        <textarea required name="Motivo_Suspension" rows="3" maxlength="500" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm"></textarea>
+      </label>
+      <div class="flex justify-end gap-2 mt-5">
+        <button type="button" data-action="close-modal" data-modal="modal-suspender-med" class="px-4 py-2 text-sm rounded-md border border-hairline">Cancelar</button>
+        <button type="submit" class="px-4 py-2 text-sm rounded-md bg-critical text-white">Confirmar suspensión</button>
       </div>
     </form>
   </div>
@@ -372,7 +388,7 @@
           <input required name="Nombre_Completo" type="text" maxlength="200" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
         </label>
         <label class="text-xs text-[#5C6B67]">Servicio
-          <input required name="Servicio" type="text" placeholder="Ej. Neurocirugía" maxlength="100" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+          <input required name="Servicio" type="text" list="serviceList" placeholder="Buscar o crear servicio" maxlength="100" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
         </label>
         <label class="text-xs text-[#5C6B67]">Cama
           <input name="Cama" type="text" maxlength="20" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
@@ -420,7 +436,7 @@
           <input required name="Nombre_Completo" type="text" maxlength="200" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
         </label>
         <label class="text-xs text-[#5C6B67]">Servicio
-          <input required name="Servicio" type="text" maxlength="100" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+          <input required name="Servicio" type="text" list="serviceList" maxlength="100" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
         </label>
         <label class="text-xs text-[#5C6B67]">Cama
           <input name="Cama" type="text" maxlength="20" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">

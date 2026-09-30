@@ -28,7 +28,7 @@ export class Toast {
    *   al pulsarlo se llama `onClick` y el toast se cierra.
    */
   show(message, type = 'ok', opts = {}) {
-    const { persistent = false, id: stickyId, action } = opts;
+    const { persistent = type === 'error', id: stickyId, action } = opts;
     if (stickyId) this.dismiss(stickyId);
     const id = ++this.#seq;
     const el = document.createElement('div');

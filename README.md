@@ -18,6 +18,7 @@ cp .env.example .env.local     # completa VITE_SUPABASE_URL y VITE_SUPABASE_ANON
 #  10) supabase/010_patient_lifecycle_rpc.sql ← borrado/restauración con motivo auditado
 #  11) supabase/011_fechas_zona_guatemala.sql ← fechas clínicas en calendario local
 #  12) supabase/012_round_print_audit.sql ← ronda completa y auditoría de impresión
+#  13) supabase/013_permissions_idempotency_audit.sql ← permisos finos, idempotencia y auditoría minimizada
 npm run dev
 npm test                       # pruebas unitarias (sin dependencias, usa node:test)
 npm run build                  # salida en dist/
@@ -25,7 +26,7 @@ npm run build                  # salida en dist/
 
 ## ⚠️ Antes de tener pacientes reales (checklist de seguridad)
 
-1. **Corre todas las migraciones, incluida `009_auth_approval_required.sql`.** Sin
+1. **Corre todas las migraciones, incluida `013_permissions_idempotency_audit.sql`.** Sin
    `002_auth_rls_audit.sql` la anon key sigue dando acceso
    completo a cualquiera con la URL. Después de correrlo, la app exige login
    y las políticas RLS deciden en el servidor quién puede leer/escribir.
@@ -45,8 +46,10 @@ npm run build                  # salida en dist/
    (mismas migraciones, datos de prueba) y asígnalo solo al ambiente
    `Preview`; deja el proyecto de producción únicamente en `Production`.
 5. **Revisa la bitácora.** La tabla `public.audit_log` (creada por
-   `002_auth_rls_audit.sql`) registra automáticamente cada alta/edición en
-   las 7 tablas clínicas, con usuario y fecha. El "borrado" de un paciente
+  `002_auth_rls_audit.sql`) registra altas/ediciones, lecturas y solicitudes
+  de impresión/exportación. Desde `013`, las ediciones guardan solo campos
+  modificados con valores anterior/nuevo, y se eliminan los snapshots históricos
+  completos. El "borrado" de un paciente
   es lógico (columna `Eliminado_En`/`Eliminado_Por` en `DB_Pacientes`); un médico puede usar el botón **Restaurar** de la aplicación e indicar HC y motivo. El borrado y la restauración se realizan mediante RPC y registran el motivo en la bitácora.
    No se recomienda editar `DB_Pacientes` directamente en el SQL Editor, porque la
    integridad del expediente y la auditoría se aplican mediante triggers/RLS.
@@ -118,7 +121,7 @@ supabase db reset
 supabase test db
 ```
 
-`db reset` aplica todas las migraciones en orden (`000` → `007`) y carga únicamente datos sintéticos de desarrollo.
+`db reset` aplica todas las migraciones en orden (`000` → `013`) y carga únicamente datos sintéticos de desarrollo.
 
 ### Pruebas contra Supabase real
 
@@ -167,8 +170,22 @@ La versión de Fase 3 añade:
 
 ### Orden de migraciones
 
-`000_schema.sql` → `001_search_and_indexes.sql` → `002_auth_rls_audit.sql` → `003_realtime.sql` → `004_correcciones_produccion.sql` → `005_pam_antibioticos_cultivos_periodicos.sql` → `006_hardening_produccion.sql` → `007_phase2_performance.sql` → `008_phase3_product.sql` → `009_auth_approval_required.sql` → `010_patient_lifecycle_rpc.sql` → `011_fechas_zona_guatemala.sql` → `012_round_print_audit.sql`.
+`000_schema.sql` → `001_search_and_indexes.sql` → `002_auth_rls_audit.sql` → `003_realtime.sql` → `004_correcciones_produccion.sql` → `005_pam_antibioticos_cultivos_periodicos.sql` → `006_hardening_produccion.sql` → `007_phase2_performance.sql` → `008_phase3_product.sql` → `009_auth_approval_required.sql` → `010_patient_lifecycle_rpc.sql` → `011_fechas_zona_guatemala.sql` → `012_round_print_audit.sql` → `013_permissions_idempotency_audit.sql`.
 
-Las pruebas de base de datos de Fase 3 están en `supabase/tests/database/phase3_test.sql` y deben ejecutarse mediante `supabase test db` en CI.
+## Fase 4 — confiabilidad clínica y permisos
+
+Aplica `013_permissions_idempotency_audit.sql` después de `012`. Esta migración
+restringe altas/ediciones demográficas y cambios de estado de medicamentos al
+rol médico, añade claves únicas para reintentos seguros, captura el motivo de
+suspensión, registra lecturas y solicitudes de salida, y depura los snapshots
+completos históricos de auditoría. Enfermería conserva las operaciones clínicas
+permitidas por las políticas existentes, pero no puede editar pacientes ni
+suspender medicamentos.
+
+El diálogo nativo del navegador no informa a la aplicación si la persona eligió
+impresora o "Guardar como PDF"; ambos se registran como solicitud de impresión y
+exportación iniciada, no como confirmación de que el archivo se haya guardado.
+
+Las pruebas de base de datos están en `supabase/tests/database/phase2_test.sql`, `phase3_test.sql` y `phase4_test.sql`; se ejecutan mediante `supabase test db` en CI.
 
 - **Build Vite 8/Rolldown:** la segmentación manual usa `build.rolldownOptions.output.codeSplitting`; no se utiliza la forma objeto obsoleta de `manualChunks`.

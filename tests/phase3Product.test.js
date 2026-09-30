@@ -98,6 +98,27 @@ test('fase 3: la migración corrige ronda y registra impresiones', () => {
   assert.match(migration, /'PRINT'/);
 });
 
+test('fase 4: permisos, auditoría minimizada e idempotencia tienen contrato UI/API/SQL', () => {
+  const migration = read('supabase/013_permissions_idempotency_audit.sql');
+  const api = read('src/services/ApiService.js');
+  const controller = read('src/controllers/DashboardController.js');
+  const html = read('index.html');
+  const chart = read('src/views/sections/vitales.js');
+  assert.match(migration, /Idempotency_Key/);
+  assert.match(migration, /solo medico puede editar pacientes/);
+  assert.match(migration, /solo medico puede actualizar medicamentos/);
+  assert.match(migration, /f_proteger_estado_medicamento/);
+  assert.match(migration, /'old'[,\s\S]*old_value/);
+  assert.match(migration, /'READ'[\s\S]*'EXPORT'/);
+  assert.match(migration, /jsonb_object_agg\(k, true\)/);
+  assert.match(api, /duplicate = await this\.#[^\n]*|Idempotency_Key/);
+  assert.match(controller, /Modificado_Por/);
+  assert.match(html, /list="serviceList"/);
+  assert.match(chart, /label: 'PAM'/);
+  assert.match(chart, /label: 'Sistólica'/);
+  assert.match(chart, /label: 'Diastólica'/);
+});
+
 test('build: usa codeSplitting de Rolldown y no la forma objeto obsoleta de manualChunks', () => {
   const config = read('vite.config.js');
   assert.match(config, /rolldownOptions/);

@@ -14,7 +14,7 @@ export class DashboardView {
     const $ = id => doc.getElementById(id);
     this.#el = {
       loading: $('loadingScreen'), search: $('patientSearch'), results: $('searchResults'),
-      servicio: $('servicioFilter'), sideRail: $('sideRail'), mobileRail: $('mobileRail'),
+      servicio: $('servicioFilter'), serviceList: $('serviceList'), sideRail: $('sideRail'), mobileRail: $('mobileRail'),
       empty: $('emptyState'), patientView: $('patientView'), header: $('patientHeader'),
       section: $('sectionContainer'), labTypes: $('tipoLabList'),
       searchSpinner: $('searchSpinner'), searchStatus: $('searchStatus'), round: $('roundContainer'),
@@ -41,14 +41,20 @@ export class DashboardView {
     this.#el.userBadge.classList.remove('hidden');
     this.#el.userBadge.classList.add('flex');
     this.#doc.body.classList.toggle('role-medico', rol === 'medico');
-    this.#doc.body.classList.toggle('role-lectura', rol !== 'medico' && rol !== 'enfermeria');
+    this.#doc.body.classList.toggle('role-enfermeria', rol === 'enfermeria');
+    this.#doc.body.classList.toggle('role-lectura', rol === 'lectura' || (rol !== 'medico' && rol !== 'enfermeria'));
+    const inactiveMedicationOption = this.#doc.getElementById('medInactiveOption');
+    if (inactiveMedicationOption) inactiveMedicationOption.hidden = rol === 'enfermeria';
   }
 
   hideUser() {
     this.#el.userBadge.classList.add('hidden');
     this.#el.userBadge.classList.remove('flex');
     this.#doc.body.classList.remove('role-medico');
+    this.#doc.body.classList.remove('role-enfermeria');
     this.#doc.body.classList.remove('role-lectura');
+    const inactiveMedicationOption = this.#doc.getElementById('medInactiveOption');
+    if (inactiveMedicationOption) inactiveMedicationOption.hidden = false;
   }
 
   clearProtectedData() {
@@ -75,8 +81,11 @@ export class DashboardView {
   focusSearch() { this.#el.search.focus(); this.#el.search.select?.(); }
 
   renderServicios(servicios) {
+    const selectedService = this.#el.servicio.value;
     this.#el.servicio.innerHTML = '<option value="">Todos los servicios</option>' +
       servicios.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+    if (servicios.includes(selectedService)) this.#el.servicio.value = selectedService;
+    if (this.#el.serviceList) this.#el.serviceList.innerHTML = servicios.map(s => `<option value="${esc(s)}">`).join('');
   }
 
   renderSearchResults(patients) {

@@ -10,6 +10,7 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([t
 export class ModalManager {
   #doc;
   #openStack = []; // { id, trigger } — pila por si un modal abre a otro
+  #dirtyForms = new WeakSet();
 
   constructor(doc = document) {
     this.#doc = doc;
@@ -17,10 +18,12 @@ export class ModalManager {
       if (e.key === 'Escape') this.closeTop();
       else if (e.key === 'Tab') this.#trapTab(e);
     });
+    doc.addEventListener('input', e => this.#markDirty(e.target));
+    doc.addEventListener('change', e => this.#markDirty(e.target));
     doc.addEventListener('click', e => {
       // Solo cierra si el clic fue exactamente sobre el fondo (backdrop), no sobre el formulario.
       if (e.target.classList?.contains('modal-backdrop') && !e.target.classList.contains('hidden')) {
-        this.close(e.target.id);
+        this.requestClose(e.target.id);
       }
     });
   }
@@ -31,6 +34,7 @@ export class ModalManager {
     const form = modal.querySelector('form');
     if (values && form) {
       form.reset();
+      this.#dirtyForms.delete(form);
       for (const [name, value] of Object.entries(values)) {
         if (form.elements[name]) form.elements[name].value = value ?? '';
       }
@@ -50,7 +54,9 @@ export class ModalManager {
   close(id) {
     const modal = this.#doc.getElementById(id);
     modal.classList.add('hidden');
-    modal.querySelector('form')?.reset();
+    const form = modal.querySelector('form');
+    form?.reset();
+    if (form) this.#dirtyForms.delete(form);
     const idx = this.#openStack.findIndex(e => e.id === id);
     if (idx === -1) return;
     const [entry] = this.#openStack.splice(idx, 1);
@@ -59,7 +65,17 @@ export class ModalManager {
 
   closeTop() {
     const top = this.#openStack[this.#openStack.length - 1];
-    if (top) this.close(top.id);
+    if (top) this.requestClose(top.id);
+  }
+
+  requestClose(id) {
+    const form = this.#doc.getElementById(id)?.querySelector('form');
+    if (form && this.#dirtyForms.has(form)) {
+      const confirmDiscard = this.#doc.defaultView?.confirm ?? globalThis.confirm;
+      if (typeof confirmDiscard !== 'function' || !confirmDiscard('Hay cambios sin guardar. ¿Descartarlos?')) return false;
+    }
+    this.close(id);
+    return true;
   }
 
   closeAll() {
@@ -75,6 +91,12 @@ export class ModalManager {
     const target = modal.querySelector('input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled])')
       ?? modal.querySelector(FOCUSABLE);
     target?.focus();
+  }
+
+  #markDirty(target) {
+    const form = target?.closest?.('form');
+    const modal = form?.closest('.modal-backdrop');
+    if (form && modal && !modal.classList.contains('hidden')) this.#dirtyForms.add(form);
   }
 
   /** Atrapa Tab/Shift+Tab dentro del modal visible más reciente (focus trap). */

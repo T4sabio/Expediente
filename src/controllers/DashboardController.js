@@ -11,6 +11,16 @@ import { reportError } from '../utils/errorReporter.js';
 import { markPerformance, measurePerformance } from '../utils/performance.js';
 import { countTimelineUnread, getTimelineReadAt, markTimelineRead, readUiPreferences, writeUiPreferences } from '../utils/preferences.js';
 
+const WRITE_ACTIONS = new Set([
+  'nuevo-paciente', 'restaurar-paciente', 'editar-paciente', 'pedir-eliminar-paciente',
+  'suspender-med', 'completar-pendiente', 'descompletar-pendiente', 'responder-consulta',
+  'resultado-cultivo', 'open-modal'
+]);
+const NURSE_RESTRICTED_ACTIONS = new Set([
+  'nuevo-paciente', 'editar-paciente', 'pedir-eliminar-paciente', 'restaurar-paciente', 'suspender-med'
+]);
+const newIdempotencyKey = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
 /**
  * Orquestador: escucha eventos del DOM (delegación por data-action), llama al ApiService,
  * actualiza el AppState y reacciona a sus cambios delegando el dibujo a las vistas.
@@ -48,7 +58,7 @@ export class DashboardController {
       'switch-section': el => this.switchSection(el.dataset.section),
       'page-section': el => this.#loadSectionPage(el.dataset.listKey, Number(el.dataset.page)),
       'open-modal': el => { this.#resetConditionalFields(el.dataset.modal); this.#modals.open(el.dataset.modal); },
-      'close-modal': el => this.#modals.close(el.dataset.modal),
+      'close-modal': el => this.#modals.requestClose?.(el.dataset.modal) ?? this.#modals.close(el.dataset.modal),
       'select-patient': el => this.#selectByHC(el.dataset.hc),
       'confirm-search-patient': () => this.#confirmSearchPatient(),
       'cancel-search-patient': () => { this.#pendingSearchPatient = null; this.#modals.close('modal-confirmar-paciente'); },
@@ -58,9 +68,7 @@ export class DashboardController {
       'restaurar-paciente': () => this.#openRestorePatient(),
       'editar-paciente': () => this.#openEditPatient(),
       'pedir-eliminar-paciente': () => this.#openDeleteConfirm(),
-      'suspender-med': el => this.#quickActionOptimistic('medications', Number(el.dataset.id),
-        { Activo: 'No' },
-        expected => this.#api.suspendMedication(Number(el.dataset.id), expected), 'Medicamento suspendido'),
+      'suspender-med': el => this.#openSuspendMedication(Number(el.dataset.id)),
       'completar-pendiente': el => this.#completeTaskWithUndo(Number(el.dataset.id)),
       'descompletar-pendiente': el => this.#quickActionOptimistic('tasks', Number(el.dataset.id),
         { Estado: 'Pendiente', Fecha_Completado: null },
@@ -80,12 +88,12 @@ export class DashboardController {
     // Formularios que solo agregan un registro al paciente abierto.
     const record = (listKey, modal, build, save, message) => form => this.#submitRecord(form, listKey, modal, build, save, message);
     this.#submitHandlers = {
-      'form-vital': record('vitals', 'modal-vital', (f, hc) => VitalSigns.fromForm(f, hc), e => this.#api.addVitalSigns(e), 'Signos vitales registrados'),
-      'form-med': record('medications', 'modal-med', (f, hc) => Medication.fromForm(f, hc), e => this.#api.addMedication(e), 'Medicamento agregado'),
-      'form-lab': record('labs', 'modal-lab', (f, hc) => LabResult.fromForm(f, hc), e => this.#api.addLab(e), 'Resultado de laboratorio agregado'),
-      'form-consulta': record('consultations', 'modal-consulta', (f, hc) => Consultation.fromForm(f, hc), e => this.#api.addConsultation(e), 'Interconsulta enviada'),
-      'form-cultivo': record('cultures', 'modal-cultivo', (f, hc) => Culture.fromForm(f, hc), e => this.#api.addCulture(e), 'Cultivo enviado a microbiología'),
-      'form-pendiente': record('tasks', 'modal-pendiente', (f, hc) => PendingTask.fromForm(f, hc), e => this.#api.addTask(e), 'Tarea pendiente agregada'),
+      'form-vital': record('vitals', 'modal-vital', (f, hc) => VitalSigns.fromForm(f, hc), (e, o) => this.#api.addVitalSigns(e, o), 'Signos vitales registrados'),
+      'form-med': record('medications', 'modal-med', (f, hc) => Medication.fromForm(f, hc), (e, o) => this.#api.addMedication(e, o), 'Medicamento agregado'),
+      'form-lab': record('labs', 'modal-lab', (f, hc) => LabResult.fromForm(f, hc), (e, o) => this.#api.addLab(e, o), 'Resultado de laboratorio agregado'),
+      'form-consulta': record('consultations', 'modal-consulta', (f, hc) => Consultation.fromForm(f, hc), (e, o) => this.#api.addConsultation(e, o), 'Interconsulta enviada'),
+      'form-cultivo': record('cultures', 'modal-cultivo', (f, hc) => Culture.fromForm(f, hc), (e, o) => this.#api.addCulture(e, o), 'Cultivo enviado a microbiología'),
+      'form-pendiente': record('tasks', 'modal-pendiente', (f, hc) => PendingTask.fromForm(f, hc), (e, o) => this.#api.addTask(e, o), 'Tarea pendiente agregada'),
       'form-pendiente-rapido': form => this.#addQuickTask(form),
       'form-responder': form => this.#submitSimple(form, 'modal-responder', 'Respuesta registrada', f =>
         this.#api.answerConsultation(Number(f._row), String(f.Respuesta_Departamento).trim(),
@@ -93,6 +101,7 @@ export class DashboardController {
       'form-resultado-cultivo': form => this.#submitSimple(form, 'modal-resultado-cultivo', 'Resultado de cultivo registrado', f =>
         this.#api.resolveCulture(Number(f._row), f.Resultado, String(f.Observaciones_Microbiologia ?? '').trim(),
           this.#findItem('cultures', Number(f._row))?.Modificado_En)),
+      'form-suspender-med': form => this.#suspendMedication(form),
       'form-nuevo-paciente': form => this.#createPatient(form),
       'form-editar-paciente': form => this.#updatePatient(form),
       'form-eliminar-paciente': form => this.#confirmDeletePatient(form),
@@ -142,7 +151,7 @@ export class DashboardController {
       }
       const session = await this.#auth.getSession();
       const userId = session?.user?.id ?? null;
-      this.#state.set({ authed: true, userId, syncStatus: 'syncing', lastSyncedAt: null });
+      this.#state.set({ authed: true, userId, role: profile.rol, syncStatus: 'syncing', lastSyncedAt: null });
       this.#view.hideLoginScreen();
       this.#view.clearLoginError();
       this.#view.renderUser(profile);
@@ -167,7 +176,7 @@ export class DashboardController {
     this.#clearActivityTimestamp();
     this.#loadSeq++; this.#searchSeq++;
     this.#stopRealtime();
-    this.#state.set({ authed: false, record: null, currentHC: null, searchResults: null, servicios: [], round: [], timelineLoadedFor: null, syncStatus: 'idle', lastSyncedAt: null, newActivityCount: 0, lastViewedTimelineAt: 0, userId: null });
+    this.#state.set({ authed: false, record: null, currentHC: null, searchResults: null, servicios: [], round: [], timelineLoadedFor: null, syncStatus: 'idle', lastSyncedAt: null, newActivityCount: 0, lastViewedTimelineAt: 0, userId: null, role: null });
     this.#view.hideUser();
     this.#view.setSearchText('');
     this.#view.showLoginScreen();
@@ -305,6 +314,10 @@ export class DashboardController {
         ...Object.fromEntries(sections.map(([listKey, items]) => [listKey, items.length])),
         timeline: timeline.length
       });
+      await this.#api.recordPatientExport(g.HC, {
+        ...Object.fromEntries(sections.map(([listKey, items]) => [listKey, items.length])),
+        timeline: timeline.length
+      });
       if (this.#state.get().currentHC !== g.HC) throw new Error('El expediente cambió antes de iniciar la impresión.');
       document.body.appendChild(container);
 
@@ -418,6 +431,10 @@ export class DashboardController {
       this.#state.set({ searchResults: null });
     }
     const el = e.target.closest('[data-action]');
+    if (el && !this.#isActionAllowed(el.dataset.action, el)) {
+      this.#toast.show('Tu rol no tiene permiso para realizar esta acción.', 'error');
+      return;
+    }
     this.#actions[el?.dataset.action]?.(el);
   }
 
@@ -426,7 +443,28 @@ export class DashboardController {
     const handler = form && this.#submitHandlers[form.id];
     if (!handler) return;
     e.preventDefault();
+    const role = this.#state.get().role;
+    const nurseRestricted = role === 'enfermeria' && ['form-nuevo-paciente', 'form-editar-paciente', 'form-eliminar-paciente', 'form-restaurar-paciente'].includes(form.id);
+    if (form.id !== 'form-login' && (!['medico', 'enfermeria'].includes(role) || nurseRestricted)) {
+      this.#toast.show('Tu rol no tiene permiso para guardar estos cambios.', 'error');
+      return;
+    }
+    if (form.id === 'form-med' && role === 'enfermeria' && form.elements.Activo.value === 'No') {
+      this.#toast.show('Enfermería no puede registrar medicamentos como suspendidos.', 'error');
+      return;
+    }
     this.#guarded(form, () => handler(form));
+  }
+
+  #isActionAllowed(action, element) {
+    if (!WRITE_ACTIONS.has(action)) return true;
+    const role = this.#state.get().role;
+    if (!['medico', 'enfermeria'].includes(role)) return false;
+    if (role === 'enfermeria') {
+      const modal = element?.dataset?.modal;
+      return !NURSE_RESTRICTED_ACTIONS.has(action) && !['modal-nuevo-paciente', 'modal-editar-paciente', 'modal-eliminar-paciente', 'modal-restaurar-paciente'].includes(modal);
+    }
+    return true;
   }
 
   /* ================================================================
@@ -444,23 +482,31 @@ export class DashboardController {
     }
 
     const recordChanged = s.record !== prev.record;
-    const headerChanged = recordChanged || s.syncStatus !== prev.syncStatus || s.lastSyncedAt !== prev.lastSyncedAt || s.newActivityCount !== prev.newActivityCount;
-    if (recordChanged) {
-      if (s.record) {
-        this.#view.showPatientView();
-        const patient = { ...s.record.patient, __lastActivity: s.record.summary?.lastActivity ?? null };
-        this.#view.renderHeader(patient, { syncStatus: s.syncStatus, lastSyncedAt: s.lastSyncedAt, newActivityCount: s.newActivityCount });
-        this.#view.setLabTypes(s.record.labTypes);
-      } else {
-        this.#charts.destroy();
-        this.#view.showEmptyState();
-      }
-    } else if (headerChanged && s.record) {
+    const patientChanged = s.record?.patient !== prev.record?.patient;
+    const sectionListKey = ({ vitales: 'vitals', medicamentos: 'medications', laboratorios: 'labs', consultas: 'consultations', cultivos: 'cultures', pendientes: 'tasks' })[s.currentSection];
+    const activeSectionChanged = recordChanged && s.record && (
+      patientChanged ||
+      (s.currentSection === 'resumen' && s.record.summary !== prev.record?.summary) ||
+      (s.currentSection === 'timeline' && s.record.timeline !== prev.record?.timeline) ||
+      (sectionListKey && (s.record[sectionListKey] !== prev.record?.[sectionListKey] || s.record.pagination?.[sectionListKey] !== prev.record?.pagination?.[sectionListKey]))
+    );
+    const previousActivity = prev.record?.summary?.lastActivity;
+    const currentActivity = s.record?.summary?.lastActivity;
+    const activityChanged = previousActivity?.event_at !== currentActivity?.event_at || previousActivity?.actor_name !== currentActivity?.actor_name;
+    const headerChanged = patientChanged || activityChanged || s.syncStatus !== prev.syncStatus || s.newActivityCount !== prev.newActivityCount;
+    if (recordChanged && !s.record) {
+      this.#charts.destroy();
+      this.#view.showEmptyState();
+    } else if (s.record) {
+      if (patientChanged) this.#view.showPatientView();
+      if (recordChanged) this.#view.setLabTypes(s.record.labTypes);
+    }
+    if (headerChanged && s.record) {
       const patient = { ...s.record.patient, __lastActivity: s.record.summary?.lastActivity ?? null };
       this.#view.renderHeader(patient, { syncStatus: s.syncStatus, lastSyncedAt: s.lastSyncedAt, newActivityCount: s.newActivityCount });
     }
 
-    if (recordChanged || s.currentSection !== prev.currentSection || s.timelineLoadedFor !== prev.timelineLoadedFor || (s.currentSection === 'timeline' && s.newActivityCount !== prev.newActivityCount)) {
+    if (activeSectionChanged || s.currentSection !== prev.currentSection || s.timelineLoadedFor !== prev.timelineLoadedFor || (s.currentSection === 'timeline' && s.newActivityCount !== prev.newActivityCount)) {
       this.#view.highlightSection(s.currentSection);
       if (s.record) this.#renderSection();
     }
@@ -479,12 +525,57 @@ export class DashboardController {
     const ctx = { charts: this.#charts, today: todayISODate(), pagination: record.pagination?.[currentSection] ?? null, timeline: record.timeline, newActivityCount: this.#state.get().newActivityCount, lastViewedAt: this.#state.get().lastViewedTimelineAt };
     this.#charts.destroy();
     try {
+      const uiState = this.#captureSectionUiState();
       this.#view.setSectionHtml(section.render(record, ctx));
+      this.#restoreSectionControls(uiState);
       section.mount?.(this.#view.sectionContainer, record, ctx);
+      this.#restoreSectionDetailsAndFocus(uiState);
       measurePerformance(`section-render-${currentSection}`, 'section-render-start');
     } catch (err) {
       console.error(err);
       this.#toast.show('No se pudo mostrar la sección: ' + err.message, 'error');
+    }
+  }
+
+  #captureSectionUiState() {
+    const root = this.#view.sectionContainer;
+    if (typeof root.querySelectorAll !== 'function') return { controls: [], details: [], active: null };
+    const controls = [...root.querySelectorAll('input, textarea, select')].map(el => ({
+      value: el.value,
+      checked: 'checked' in el ? el.checked : undefined
+    }));
+    const focusable = [...root.querySelectorAll('input, textarea, select, button, [tabindex]:not([tabindex="-1"])')];
+    const activeElement = root.ownerDocument.activeElement;
+    const activeIndex = focusable.indexOf(activeElement);
+    const active = activeIndex < 0 ? null : {
+      index: activeIndex,
+      selectionStart: activeElement.selectionStart,
+      selectionEnd: activeElement.selectionEnd
+    };
+    return { controls, details: [...root.querySelectorAll('details')].map(el => el.open), active };
+  }
+
+  #restoreSectionControls(state) {
+    const root = this.#view.sectionContainer;
+    if (typeof root.querySelectorAll !== 'function') return;
+    const controls = [...root.querySelectorAll('input, textarea, select')];
+    state.controls.forEach((saved, index) => {
+      const el = controls[index];
+      if (!el) return;
+      el.value = saved.value;
+      if (saved.checked !== undefined) el.checked = saved.checked;
+    });
+  }
+
+  #restoreSectionDetailsAndFocus(state) {
+    const root = this.#view.sectionContainer;
+    if (typeof root.querySelectorAll !== 'function') return;
+    [...root.querySelectorAll('details')].forEach((el, index) => { el.open = state.details[index] ?? false; });
+    if (!state.active) return;
+    const target = root.querySelectorAll('input, textarea, select, button, [tabindex]:not([tabindex="-1"])')[state.active.index];
+    target?.focus();
+    if (state.active.selectionStart !== null && typeof target?.setSelectionRange === 'function') {
+      target.setSelectionRange(state.active.selectionStart, state.active.selectionEnd);
     }
   }
 
@@ -581,7 +672,11 @@ export class DashboardController {
       if (seq !== this.#loadSeq) return;
       const lastViewedAt = getTimelineReadAt(this.#state.get().userId, hc);
       const unread = record.summary?.lastActivity?.event_at && new Date(record.summary.lastActivity.event_at).getTime() > lastViewedAt ? 1 : 0;
-      this.#state.set({ record, currentHC: hc, timelineLoadedFor: null, lastViewedTimelineAt: lastViewedAt, newActivityCount: unread, syncStatus: 'syncing', lastSyncedAt: Date.now() });
+      const syncStatus = silent
+        ? (this.#state.get().syncStatus === 'offline' ? 'offline' : 'live')
+        : 'syncing';
+      this.#state.set({ record, currentHC: hc, timelineLoadedFor: null, lastViewedTimelineAt: lastViewedAt, newActivityCount: unread, syncStatus, lastSyncedAt: Date.now() });
+      if (!silent && this.#api.recordPatientRead) void this.#api.recordPatientRead(hc).catch(err => reportError(err, { origin: 'audit-patient-read' }));
       if (lastViewedAt) void this.#refreshTimelineUnread(hc, lastViewedAt);
       measurePerformance('patient-load', perfStart);
       if (!silent) this.#watchRealtime(hc);
@@ -624,7 +719,9 @@ export class DashboardController {
     if (next !== current) {
       const activityAt = event.commit_timestamp || event.new?.Modificado_En || event.old?.Modificado_En;
       const lastViewed = this.#state.get().lastViewedTimelineAt;
-      const isNew = activityAt && new Date(activityAt).getTime() > Number(lastViewed || 0);
+      const actorId = event.new?.Modificado_Por ?? event.old?.Modificado_Por;
+      const isOwnEvent = actorId && actorId === this.#state.get().userId;
+      const isNew = !isOwnEvent && activityAt && new Date(activityAt).getTime() > Number(lastViewed || 0);
       this.#state.set({ record: next, syncStatus: 'live', lastSyncedAt: Date.now(), newActivityCount: isNew ? this.#state.get().newActivityCount + 1 : this.#state.get().newActivityCount });
     } else {
       this.#state.set({ syncStatus: 'live', lastSyncedAt: Date.now() });
@@ -827,7 +924,7 @@ export class DashboardController {
   }
 
   async #refreshServicios() {
-    try { this.#state.set({ servicios: await this.#api.listServicios() }); } catch { /* no crítico */ }
+    try { this.#state.set({ servicios: await this.#api.listServicios({ force: true }) }); } catch { /* no crítico */ }
   }
 
   /* ================================================================
@@ -853,11 +950,26 @@ export class DashboardController {
   async #submitRecord(form, listKey, modalId, build, save, message) {
     const hc = this.#state.get().currentHC;
     if (!hc) throw new Error('Selecciona un paciente primero.');
-    const serverItem = await save(build(this.#modals.readForm(form), hc));
+    const values = this.#modals.readForm(form);
+    const payload = build(values, hc);
+    const idempotencyKey = this.#idempotencyKey(form, { hc, values });
+    const serverItem = await save(payload, { idempotencyKey });
+    delete form.dataset.idempotencyKey;
+    delete form.dataset.idempotencyPayload;
     this.#modals.close(modalId);
     this.#applyInsertedItem(listKey, serverItem);
     this.#toast.show(message);
     await this.#refreshRecordSummary();
+  }
+
+  #idempotencyKey(form, payload) {
+    form.dataset ??= {};
+    const signature = JSON.stringify(payload);
+    if (!form.dataset.idempotencyKey || form.dataset.idempotencyPayload !== signature) {
+      form.dataset.idempotencyKey = newIdempotencyKey();
+      form.dataset.idempotencyPayload = signature;
+    }
+    return form.dataset.idempotencyKey;
   }
 
   #applyInsertedItem(listKey, item) {
@@ -887,7 +999,10 @@ export class DashboardController {
     if (!hc) throw new Error('Selecciona un paciente primero.');
     const descripcion = String(new FormData(form).get('Descripcion_Tarea') ?? '').trim();
     if (!descripcion) return;
-    const serverItem = await this.#api.addTask(PendingTask.fromForm({ Descripcion_Tarea: descripcion }, hc));
+    const idempotencyKey = this.#idempotencyKey(form, { hc, descripcion });
+    const serverItem = await this.#api.addTask(PendingTask.fromForm({ Descripcion_Tarea: descripcion }, hc), { idempotencyKey });
+    delete form.dataset.idempotencyKey;
+    delete form.dataset.idempotencyPayload;
     form.reset();
     this.#applyInsertedItem('tasks', serverItem);
     await this.#refreshRecordSummary();
@@ -959,6 +1074,40 @@ export class DashboardController {
     }
   }
 
+  #openSuspendMedication(id) {
+    const medication = this.#findItem('medications', id);
+    if (!medication) return;
+    this.#modals.open('modal-suspender-med', { _row: id, Motivo_Suspension: '' });
+    const name = document.getElementById('suspenderMedNombre');
+    if (name) name.textContent = medication.Nombre_Medicamento;
+  }
+
+  async #suspendMedication(form) {
+    const values = this.#modals.readForm(form);
+    const id = Number(values._row);
+    const reason = String(values.Motivo_Suspension ?? '').trim();
+    if (!reason) throw new Error('Indica el motivo de suspensión.');
+    const medication = this.#findItem('medications', id);
+    if (!medication) throw new Error('El medicamento ya no está disponible.');
+    const updated = await this.#api.suspendMedication(id, medication.Modificado_En, reason);
+    const latest = this.#state.get().record;
+    if (latest && updated) this.#state.set({ record: latest.withPatchedItem('medications', id, updated) });
+    this.#modals.close('modal-suspender-med');
+    this.#toast.show('Medicamento suspendido', 'ok', {
+      persistent: true,
+      action: {
+        label: 'Deshacer',
+        onClick: async () => {
+          await this.#quickActionOptimistic('medications', id,
+            { Activo: 'Sí', Motivo_Suspension: null },
+            expected => this.#api.unsuspendMedication(id, expected), 'Suspensión deshecha');
+          await this.#refreshRecordSummary();
+        }
+      }
+    });
+    await this.#refreshRecordSummary();
+  }
+
   /**
    * Actualiza la UI de inmediato (sin esperar la red ni recargar todo el
    * expediente) y revierte solo si la petición falla. `listKey` es la lista
@@ -993,7 +1142,7 @@ export class DashboardController {
   /** Mensaje mostrado a la persona: distingue "sin conexión" de un error de negocio/servidor. */
   #friendlyErrorMessage(err) {
     return isNetworkError(err)
-      ? 'Sin conexión a internet. Revisa tu red e inténtalo de nuevo; nada se guardó.'
+      ? 'Sin conexión: no se pudo confirmar el guardado. Verifica el expediente antes de reintentar.'
       : err.message;
   }
 
