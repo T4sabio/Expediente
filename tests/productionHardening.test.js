@@ -24,6 +24,13 @@ test('migración 006 existe y contiene controles críticos de RLS/inmutabilidad'
   assert.match(sql, /solo medico puede leer bitacora/);
 });
 
+test('triggers genéricos no leen Eliminado_En fuera de DB_Pacientes', () => {
+  const sql = fs.readFileSync(path.join(root, 'supabase/016_fix_patient_columns_generic_triggers.sql'), 'utf8');
+  assert.match(sql, /if tg_table_name = 'DB_Pacientes' then\s+if new\."Eliminado_En"/);
+  assert.match(sql, /tg_op = 'UPDATE' and tg_table_name = 'DB_Pacientes' then\s+if old\."Eliminado_En"/);
+  assert.doesNotMatch(sql, /tg_table_name = 'DB_Pacientes' and (?:new|old)\."Eliminado_En"/);
+});
+
 test('fechas clínicas derivadas usan el servidor y el calendario de Guatemala', () => {
   const sql = fs.readFileSync(path.join(root, 'supabase/011_fechas_zona_guatemala.sql'), 'utf8');
   const api = fs.readFileSync(path.join(root, 'src/services/ApiService.js'), 'utf8');

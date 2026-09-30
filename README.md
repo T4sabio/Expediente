@@ -19,7 +19,7 @@ cp .env.example .env.local     # completa VITE_SUPABASE_URL y VITE_SUPABASE_ANON
 #  11) supabase/011_fechas_zona_guatemala.sql ← fechas clínicas en calendario local
 #  12) supabase/012_round_print_audit.sql ← ronda completa y auditoría de impresión
 #  13) supabase/013_permissions_idempotency_audit.sql ← permisos finos, idempotencia y auditoría minimizada
-# La CLI aplica las copias versionadas de supabase/migrations/; aplica 014 y 015 después de 013 en proyectos alojados.
+# La CLI aplica las copias versionadas de supabase/migrations/; aplica 014, 015 y 016 después de 013 en proyectos alojados.
 npm run dev
 npm test                       # pruebas unitarias (sin dependencias, usa node:test)
 npm run build                  # salida en dist/
@@ -171,9 +171,9 @@ La versión de Fase 3 añade:
 
 ### Orden de migraciones
 
-`000_schema.sql` → `001_search_and_indexes.sql` → `002_auth_rls_audit.sql` → `003_realtime.sql` → `004_correcciones_produccion.sql` → `005_pam_antibioticos_cultivos_periodicos.sql` → `006_hardening_produccion.sql` → `007_phase2_performance.sql` → `008_phase3_product.sql` → `009_auth_approval_required.sql` → `010_patient_lifecycle_rpc.sql` → `011_fechas_zona_guatemala.sql` → `012_round_print_audit.sql` → `013_permissions_idempotency_audit.sql`.
+`000_schema.sql` → `001_search_and_indexes.sql` → `002_auth_rls_audit.sql` → `003_realtime.sql` → `004_correcciones_produccion.sql` → `005_pam_antibioticos_cultivos_periodicos.sql` → `006_hardening_produccion.sql` → `007_phase2_performance.sql` → `008_phase3_product.sql` → `009_auth_approval_required.sql` → `010_patient_lifecycle_rpc.sql` → `011_fechas_zona_guatemala.sql` → `012_round_print_audit.sql` → `013_permissions_idempotency_audit.sql` → `014_resumen_clinico_y_contexto.sql` → `015_estado_episodio_y_umbral.sql` → `016_fix_patient_columns_generic_triggers.sql`.
 
-Después de 013, ejecutar `014_resumen_clinico_y_contexto.sql` y `015_estado_episodio_y_umbral.sql`, en ese orden.
+Después de 013, ejecutar `014_resumen_clinico_y_contexto.sql`, `015_estado_episodio_y_umbral.sql` y `016_fix_patient_columns_generic_triggers.sql`, en ese orden.
 
 ## Fase 4 — confiabilidad clínica y permisos
 
