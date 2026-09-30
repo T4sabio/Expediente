@@ -24,7 +24,7 @@
   </div>
 
   <!-- ============ PANTALLA DE LOGIN ============ -->
-  <div id="loginScreen" class="hidden fixed inset-0 bg-ink flex items-center justify-center z-40 px-4">
+  <div id="loginScreen" role="region" aria-label="Inicio de sesión" class="hidden fixed inset-0 bg-ink flex items-center justify-center z-40 px-4">
     <form id="form-login" class="fade-in bg-white rounded-xl w-full max-w-sm p-6 shadow-xl">
       <div class="flex items-center gap-2 mb-1">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 12h4l2 7 4-14 2 7h6" stroke="#1F8C74" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -41,7 +41,7 @@
         </label>
       </div>
       <button type="submit" class="mt-4 w-full px-4 py-2 text-sm rounded-md bg-accent text-white font-medium">Iniciar sesión</button>
-      <p class="mt-3 text-[11px] text-[#9AA6A2] leading-relaxed">El acceso debe ser habilitado por un administrador. La sesión se bloquea tras 15 minutos de inactividad.</p>
+      <p class="mt-3 text-[11px] text-[#5C6B67] leading-relaxed">El acceso debe ser habilitado por un administrador. La sesión se bloquea tras 15 minutos de inactividad.</p>
     </form>
   </div>
 
@@ -70,6 +70,7 @@
       </div>
 
       <div class="w-full sm:w-auto sm:min-w-[160px]">
+        <label for="servicioFilter" class="sr-only">Filtrar pacientes por servicio</label>
         <select id="servicioFilter" class="w-full bg-white/10 border border-white/15 text-white text-sm rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent">
           <option value="">Todos los servicios</option>
         </select>
@@ -88,6 +89,14 @@
 
       <button data-action="open-command-palette" title="Abrir comandos" aria-label="Abrir comandos (Ctrl o Command K)" class="p-2 rounded-md bg-white/10 hover:bg-white/20 transition">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M5 8h14M5 16h14" stroke="white" stroke-width="1.8" stroke-linecap="round"/><circle cx="9" cy="8" r="2" stroke="white" stroke-width="1.5"/><circle cx="15" cy="16" r="2" stroke="white" stroke-width="1.5"/></svg>
+      </button>
+
+      <button data-action="cycle-density" title="Cambiar densidad de interfaz" aria-label="Cambiar densidad de interfaz" class="p-2 rounded-md bg-white/10 hover:bg-white/20 transition">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" stroke="white" stroke-width="1.8" stroke-linecap="round"/><circle cx="8" cy="6" r="1.5" fill="#17211F" stroke="white"/><circle cx="15" cy="12" r="1.5" fill="#17211F" stroke="white"/><circle cx="10" cy="18" r="1.5" fill="#17211F" stroke="white"/></svg>
+      </button>
+
+      <button data-action="toggle-contrast" title="Alternar alto contraste" aria-label="Alternar alto contraste" aria-pressed="false" class="p-2 rounded-md bg-white/10 hover:bg-white/20 transition">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.5" stroke="white" stroke-width="1.8"/><path d="M12 3.5a8.5 8.5 0 0 0 0 17z" fill="white"/></svg>
       </button>
 
       <button id="refreshBtn" data-action="refresh" title="Actualizar datos del paciente" class="p-2 rounded-md bg-white/10 hover:bg-white/20 transition">
@@ -119,6 +128,13 @@
 
     <!-- ============ CONTENIDO PRINCIPAL ============ -->
     <main class="flex-1 min-w-0">
+
+      <section id="roundContainer" class="px-4 md:px-6 py-5" aria-live="polite">
+        <div class="border-b border-hairline pb-4">
+          <h1 class="text-lg font-semibold text-ink">Empieza por la ronda de hoy</h1>
+          <p class="mt-1 text-sm text-[#5C6B67]">Inicia sesión para ver los pacientes activos y sus novedades.</p>
+        </div>
+      </section>
 
       <!-- Estado vacío -->
       <div id="emptyState" class="flex flex-col items-center justify-center text-center px-6 py-24 text-[#5C6B67]">
@@ -155,22 +171,25 @@
           <input required name="Fecha_Hora" type="datetime-local" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
         </label>
         <label class="text-xs text-[#5C6B67]">PA sistólica
-          <input required name="PA_Sistolica" type="number" step="0.1" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+          <input name="PA_Sistolica" type="number" step="1" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
         </label>
         <label class="text-xs text-[#5C6B67]">PA diastólica
-          <input required name="PA_Diastolica" type="number" step="0.1" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+          <input name="PA_Diastolica" type="number" step="1" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
         </label>
         <label class="text-xs text-[#5C6B67]">Frec. cardíaca
-          <input required name="Frecuencia_Cardiaca" type="number" step="0.1" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+          <input name="Frecuencia_Cardiaca" type="number" step="1" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
         </label>
         <label class="text-xs text-[#5C6B67]">SpO2 (%)
-          <input required name="SpO2" type="number" step="0.1" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+          <input name="SpO2" type="number" step="1" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
         </label>
         <label class="text-xs text-[#5C6B67]">Temperatura (°C)
-          <input required name="Temperatura" type="number" step="0.1" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+          <input name="Temperatura" type="number" step="0.1" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
         </label>
         <label class="text-xs text-[#5C6B67]">Frec. respiratoria
-          <input required name="Frecuencia_Respiratoria" type="number" step="0.1" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+          <input name="Frecuencia_Respiratoria" type="number" step="1" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="col-span-2 text-xs text-[#5C6B67]">Oxígeno suplementario durante la medición
+          <select name="Oxigeno_Suplementario" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm"><option value="">No especificado</option><option value="No">No</option><option value="Sí">Sí</option></select>
         </label>
       </div>
       <div class="flex justify-end gap-2 mt-5">
@@ -203,6 +222,9 @@
         <label class="col-span-2 flex items-center gap-2 text-xs text-[#5C6B67] mt-1">
           <input type="checkbox" name="Requiere_Seguimiento_Dias" id="medRequiereSeguimiento" class="rounded border-hairline">
           Requiere seguimiento de días de cobertura (ej. antibióticos)
+        </label>
+        <label class="col-span-2 text-xs text-[#5C6B67]">Duración prevista (días, opcional)
+          <input name="Dias_Tratamiento" type="number" min="1" step="1" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
         </label>
         <label id="medFrecuenciaHorasWrap" class="col-span-2 text-xs text-[#5C6B67] hidden">Frecuencia en horas (opcional, ej. 8)
           <input name="Frecuencia_Horas" type="number" min="1" step="1" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
@@ -287,7 +309,7 @@
           <input required name="Tipo_Cultivo" type="text" placeholder="Ej. Hemocultivo" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
         </label>
         <label class="text-xs text-[#5C6B67]">Fecha de envío
-          <input required name="Fecha_Envio" type="date" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+          <input required name="Fecha_Envio_Hora" type="datetime-local" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
         </label>
         <label class="flex items-center gap-2 text-xs text-[#5C6B67]">
           <input type="checkbox" name="Es_Periodico" id="cultivoEsPeriodico" class="rounded border-hairline">
@@ -399,11 +421,24 @@
         <label class="text-xs text-[#5C6B67]">No. Rayos X
           <input name="Num_RayosX" type="text" maxlength="50" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
         </label>
+        <label class="text-xs text-[#5C6B67]">Estado del episodio
+          <select name="Estado_Episodio" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm"><option>Hospitalizado</option><option>Trasladado</option><option>Alta</option><option>Defunción</option></select>
+        </label>
+        <label class="text-xs text-[#5C6B67]">Fecha de egreso / traslado
+          <input name="Fecha_Egreso" type="date" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="text-xs text-[#5C6B67]">Umbral para signos atrasados (horas)
+          <input name="Umbral_Signos_Horas" type="number" min="1" max="720" step="1" value="24" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
         <label class="col-span-2 text-xs text-[#5C6B67]">Motivo de consulta
           <textarea name="Motivo_Consulta" rows="2" maxlength="1000" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm"></textarea>
         </label>
         <label class="col-span-2 text-xs text-[#5C6B67]">Diagnósticos / problemas
           <textarea name="Diagnosticos" rows="4" maxlength="4000" placeholder="1. …&#10;1.1. …" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm font-mono-data"></textarea>
+        </label>
+        <label class="col-span-2 flex items-center gap-2 text-xs text-[#5C6B67]">
+          <input type="checkbox" name="Tiene_EPOC" class="rounded border-hairline">
+          EPOC diagnosticado
         </label>
       </div>
       <div class="flex justify-end gap-2 mt-5">
@@ -447,11 +482,24 @@
         <label class="text-xs text-[#5C6B67]">No. Rayos X
           <input name="Num_RayosX" type="text" maxlength="50" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
         </label>
+        <label class="text-xs text-[#5C6B67]">Estado del episodio
+          <select name="Estado_Episodio" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm"><option>Hospitalizado</option><option>Trasladado</option><option>Alta</option><option>Defunción</option></select>
+        </label>
+        <label class="text-xs text-[#5C6B67]">Fecha de egreso / traslado
+          <input name="Fecha_Egreso" type="date" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
+        <label class="text-xs text-[#5C6B67]">Umbral para signos atrasados (horas)
+          <input name="Umbral_Signos_Horas" type="number" min="1" max="720" step="1" value="24" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm">
+        </label>
         <label class="col-span-2 text-xs text-[#5C6B67]">Motivo de consulta
           <textarea name="Motivo_Consulta" rows="2" maxlength="1000" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm"></textarea>
         </label>
         <label class="col-span-2 text-xs text-[#5C6B67]">Diagnósticos / problemas
           <textarea name="Diagnosticos" rows="4" maxlength="4000" class="mt-1 w-full border border-hairline rounded-md px-3 py-2 text-sm font-mono-data"></textarea>
+        </label>
+        <label class="col-span-2 flex items-center gap-2 text-xs text-[#5C6B67]">
+          <input type="checkbox" name="Tiene_EPOC" class="rounded border-hairline">
+          EPOC diagnosticado
         </label>
       </div>
       <div class="flex items-center justify-between gap-2 mt-5">

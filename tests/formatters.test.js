@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   fmtDate, fmtDateTime, calendarDateOf, todayISODate, daysBetween,
-  wallTimeToOffsetISO, formatEdad, parseEdad, escapeHtml
+  wallTimeToOffsetISO, dateTimeLocalValue, formatEdad, parseEdad, escapeHtml
 } from '../src/utils/formatters.js';
 
 test('fecha calendario no se corre un día en Guatemala', () => {
@@ -24,6 +24,10 @@ test('datetime-local se convierte con offset -06:00 explícito', () => {
   assert.equal(wallTimeToOffsetISO('2026-09-24T14:30'), '2026-09-24T14:30:00-06:00');
   assert.equal(new Date(wallTimeToOffsetISO('2026-09-24T14:30')).toISOString(), '2026-09-24T20:30:00.000Z');
   assert.equal(wallTimeToOffsetISO('basura'), null);
+});
+
+test('datetime-local por defecto usa la zona horaria de Guatemala', () => {
+  assert.equal(dateTimeLocalValue(new Date('2026-09-24T20:30:00Z')), '2026-09-24T14:30');
 });
 
 test('daysBetween cuenta días calendario', () => {

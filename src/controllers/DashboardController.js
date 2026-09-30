@@ -1036,7 +1036,10 @@ export class DashboardController {
 
   /** Busca un elemento por id dentro de una lista del expediente abierto (medications, tasks, ...). */
   #findItem(listKey, id) {
-    return this.#state.get().record?.[listKey]?.find(item => item.id === id) ?? null;
+    const record = this.#state.get().record;
+    return record?.[listKey]?.find(item => item.id === id)
+      ?? (listKey === 'medications' ? record?.suspendedMedications?.find(item => item.id === id) : null)
+      ?? null;
   }
 
   async #submitSimple(form, modalId, message, save) {
@@ -1099,7 +1102,7 @@ export class DashboardController {
         label: 'Deshacer',
         onClick: async () => {
           await this.#quickActionOptimistic('medications', id,
-            { Activo: 'Sí', Motivo_Suspension: null },
+            { Activo: 'Sí', Fecha_Omision: null, Motivo_Suspension: null },
             expected => this.#api.unsuspendMedication(id, expected), 'Suspensión deshecha');
           await this.#refreshRecordSummary();
         }

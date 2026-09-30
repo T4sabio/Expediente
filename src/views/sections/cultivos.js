@@ -1,4 +1,4 @@
-import { escapeHtml as esc, fmtDate, fmtRelativeCalendarDate, orDash } from '../../utils/formatters.js';
+import { escapeHtml as esc, fmtDate, fmtDateTime, fmtRelativeCalendarDate, orDash } from '../../utils/formatters.js';
 import { sectionHeader, tableWrap, emptyRow, badge, paginationControls } from '../components.js';
 import { Culture } from '../../models/ClinicalRecords.js';
 
@@ -22,7 +22,7 @@ export const cultivosSection = {
             : '';
           return `<tr>
             <td class="py-2 px-3 font-medium">${esc(c.Tipo_Cultivo)}${periodicLine}</td>
-            <td class="py-2 px-3 font-mono-data text-xs">${fmtDate(c.Fecha_Envio)}</td>
+            <td class="py-2 px-3 font-mono-data text-xs">${c.Fecha_Envio_Hora ? fmtDateTime(c.Fecha_Envio_Hora) : fmtDate(c.Fecha_Envio)}</td>
             <td class="py-2 px-3 font-mono-data text-xs">${dias === null ? '—' : dias + 'd'}</td>
             <td class="py-2 px-3">${badge(c.Resultado || 'Pendiente', tone)}</td>
             <td class="py-2 px-3 text-sm text-[#3C4A46] max-w-xs">${esc(orDash(c.Observaciones_Microbiologia))}</td>

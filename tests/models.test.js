@@ -26,7 +26,8 @@ test('VitalSigns: ajusta FC infantil, SpO2 en EPOC y umbral de PAM', () => {
   const newborn = new Patient({ Edad: '4 semanas' });
   assert.equal(VitalSigns.isValueAbnormal('Frecuencia_Cardiaca', 150, { age: newborn.age() }), false);
   assert.equal(VitalSigns.isValueAbnormal('Frecuencia_Cardiaca', 130), true);
-  assert.equal(VitalSigns.isValueAbnormal('SpO2', 90, { diagnoses: 'EPOC' }), false);
+  assert.equal(VitalSigns.isValueAbnormal('SpO2', 90, { diagnoses: 'Sin antecedente de EPOC' }), true);
+  assert.equal(VitalSigns.isValueAbnormal('SpO2', 90, { hasCOPD: true }), false);
   assert.equal(VitalSigns.isValueAbnormal('SpO2', 90), true);
   assert.equal(VitalSigns.isValueAbnormal('PAM', 67), false);
   assert.equal(VitalSigns.isValueAbnormal('PAM', 64), true);
@@ -41,6 +42,17 @@ test('VitalSigns: convierte la fecha a offset explícito y números', () => {
 test('VitalSigns: rechaza valores imposibles', () => {
   assert.throws(() => VitalSigns.fromForm(vitalForm({ SpO2: '980' }), 'x'), ValidationError);
   assert.throws(() => VitalSigns.fromForm(vitalForm({ PA_Sistolica: '70', PA_Diastolica: '80' }), 'x'), ValidationError);
+});
+
+test('VitalSigns: acepta tomas parciales y rechaza fechas futuras', () => {
+  const partial = VitalSigns.fromForm(vitalForm({
+    PA_Sistolica: '', PA_Diastolica: '', Frecuencia_Cardiaca: '72', SpO2: '',
+    Temperatura: '', Frecuencia_Respiratoria: ''
+  }), '2026-1');
+  assert.equal(partial.Frecuencia_Cardiaca, 72);
+  assert.equal(partial.SpO2, null);
+  assert.throws(() => VitalSigns.fromForm(vitalForm({ Fecha_Hora: '2030-01-01T12:00' }), '2026-1'), ValidationError);
+  assert.throws(() => VitalSigns.fromForm(vitalForm({ Frecuencia_Cardiaca: '72.5' }), '2026-1'), ValidationError);
 });
 
 test('Medication: días de tratamiento', () => {
@@ -59,11 +71,35 @@ test('Medication: cuenta el día de inicio como día 1 y limita alerta prolongad
   assert.match(antibiotic.coverageText('2026-09-01'), /primer día/);
   assert.match(antibiotic.coverageText('2026-09-02'), /día 2/);
   assert.equal(antibiotic.isProlonged('2026-09-14'), true);
+  const planned = new Medication({ Activo: 'Sí', Requiere_Seguimiento_Dias: true, Fecha_Inicio: '2026-09-01', Dias_Tratamiento: 7 });
+  assert.equal(planned.isProlonged('2026-09-07'), true);
   const future = new Medication({ Activo: 'Sí', Fecha_Inicio: '2026-09-03' });
   assert.equal(future.treatmentDays('2026-09-02'), 0);
   assert.match(future.coverageText('2026-09-02'), /sin días/);
   const chronic = new Medication({ Activo: 'Sí', Fecha_Inicio: '2026-09-01' });
   assert.equal(chronic.isProlonged('2026-09-30'), false);
+});
+
+test('Medication: reactivar ignora una fecha de omisión obsoleta', () => {
+  const reactivated = new Medication({
+    Activo: 'Sí', Fecha_Inicio: '2026-09-01', Fecha_Omision: '2026-09-03'
+  });
+  assert.equal(reactivated.treatmentDays('2026-09-10'), 10);
+});
+
+test('Culture: periodicidad respeta intervalos de 8 y 12 horas', async () => {
+  const { Culture } = await import('../src/models/ClinicalRecords.js');
+  const now = new Date('2026-09-24T10:00:00-06:00');
+  const culture = (hours, sentAt) => new Culture({
+    id: hours, Tipo_Cultivo: `Cultivo ${hours}`, Es_Periodico: true,
+    Intervalo_Horas: hours, Fecha_Envio: '2026-09-24', Fecha_Envio_Hora: sentAt
+  });
+  const statuses = Culture.periodicStatuses([
+    culture(8, '2026-09-24T01:00:00-06:00'),
+    culture(12, '2026-09-24T01:00:00-06:00')
+  ], '2026-09-24', now);
+  assert.equal(statuses.find(status => status.tipo === 'Cultivo 8').overdue, true);
+  assert.equal(statuses.find(status => status.tipo === 'Cultivo 12').overdue, false);
 });
 
 test('Patient: arma la edad y valida obligatorios', () => {
@@ -72,6 +108,20 @@ test('Patient: arma la edad y valida obligatorios', () => {
   assert.equal(p.Edad, '1 mes');
   assert.throws(() => Patient.fromForm({ HC: '1' }).validate(), ValidationError);
   assert.equal('HC' in p.toUpdateRow(), false);
+});
+
+test('Patient: exige fecha para egreso/traslado y valida umbral de signos', () => {
+  const invalidExit = Patient.fromForm({
+    HC: 'HC-2', Nombre_Completo: 'Luis', Servicio: 'UCI',
+    Estado_Episodio: 'Alta', Umbral_Signos_Horas: '24'
+  });
+  assert.throws(() => invalidExit.validate(), /fecha de egreso/);
+  const valid = Patient.fromForm({
+    HC: 'HC-2', Nombre_Completo: 'Luis', Servicio: 'UCI',
+    Estado_Episodio: 'Trasladado', Fecha_Egreso: '2026-09-24', Umbral_Signos_Horas: '8'
+  }).validate();
+  assert.equal(valid.Estado_Episodio, 'Trasladado');
+  assert.equal(valid.Umbral_Signos_Horas, 8);
 });
 
 test('LabResult: valor vacío -> null y enlaces solo http(s)', () => {
@@ -121,4 +171,24 @@ test('PatientRecord: DELETE Realtime en fila visible no contamina una página di
   assert.equal(next.tasks.length, 25);
   assert.equal(next.tasks.some(row => row.id === 13), true);
   assert.equal(next.pagination.tasks.total, 49);
+});
+
+test('PatientRecord: suspender y reactivar mueve medicamento entre listas con conteos separados', () => {
+  const active = new Medication({ id: 8, Activo: 'Sí', Nombre_Medicamento: 'Cefepime' });
+  const record = new PatientRecord({
+    patient: new Patient({ HC: 'x', Nombre_Completo: 'Paciente' }),
+    medications: [active],
+    pagination: {
+      medications: { page: 1, pageSize: 25, total: 1, totalPages: 1 },
+      suspendedMedications: { page: 1, pageSize: 25, total: 0, totalPages: 1 }
+    }
+  });
+  const suspended = record.withPatchedItem('medications', 8, { Activo: 'No', Fecha_Omision: '2026-09-24' });
+  assert.equal(suspended.medications.length, 0);
+  assert.equal(suspended.suspendedMedications[0].Activo, 'No');
+  assert.equal(suspended.pagination.suspendedMedications.total, 1);
+  const restored = suspended.withPatchedItem('medications', 8, { Activo: 'Sí', Fecha_Omision: null });
+  assert.equal(restored.medications[0].Activo, 'Sí');
+  assert.equal(restored.medications[0].Fecha_Omision, null);
+  assert.equal(restored.pagination.suspendedMedications.total, 0);
 });

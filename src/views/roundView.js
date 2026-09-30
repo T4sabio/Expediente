@@ -2,13 +2,19 @@ import { escapeHtml as esc, fmtRelative } from '../utils/formatters.js';
 
 function issueCount(row) {
   return Number(row.due_tasks || 0) + Number(row.pending_cultures || 0)
-    + Number(row.unanswered_consultations || 0) + (row.vitals_overdue === true || isVitalDataStale(row.latest_vital_at) ? 1 : 0);
+    + Number(row.unanswered_consultations || 0) + (hasOverdueVitals(row) ? 1 : 0);
 }
 
 function isVitalDataStale(value) {
   if (!value) return true;
   const age = Date.now() - Date.parse(value);
   return !Number.isFinite(age) || age < 0 || age >= 24 * 60 * 60 * 1000;
+}
+
+function hasOverdueVitals(row) {
+  return typeof row.vitals_overdue === 'boolean'
+    ? row.vitals_overdue
+    : isVitalDataStale(row.latest_vital_at);
 }
 
 export function renderRoundOverview(rows = [], { selectedService = '' } = {}) {
@@ -22,7 +28,7 @@ export function renderRoundOverview(rows = [], { selectedService = '' } = {}) {
 
   const serviceCount = new Set(ordered.map(r => r.servicio).filter(Boolean)).size;
   const issues = ordered.reduce((sum, row) => sum + issueCount(row), 0);
-  const freshVitals = ordered.filter(r => !isVitalDataStale(r.latest_vital_at)).length;
+  const freshVitals = ordered.filter(r => !hasOverdueVitals(r)).length;
   const issueLabel = issues === 1 ? 'punto' : 'puntos';
   const rowsHtml = ordered.map((r) => {
     const alerts = issueCount(r);
@@ -32,7 +38,7 @@ export function renderRoundOverview(rows = [], { selectedService = '' } = {}) {
       Number(r.due_tasks || 0) ? `${r.due_tasks} pendientes para hoy` : '',
       Number(r.pending_cultures || 0) ? `${r.pending_cultures} cultivos` : '',
       Number(r.unanswered_consultations || 0) ? `${r.unanswered_consultations} interconsultas` : '',
-      isVitalDataStale(r.latest_vital_at) ? 'Signos >24 h' : ''
+      hasOverdueVitals(r) ? 'Signos atrasados' : ''
     ].filter(Boolean).slice(0, 2).join(' · ');
     return `<tr class="border-t border-hairline hover:bg-canvas">
       <td class="px-3 py-3"><button type="button" data-action="select-patient" data-hc="${esc(r.hc)}" class="w-full text-left focus:outline-none focus:ring-2 focus:ring-accent rounded-md">

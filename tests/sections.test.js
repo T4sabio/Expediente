@@ -6,7 +6,7 @@ import { sectionViewFor } from '../src/views/sections/index.js';
 import { PatientRecord } from '../src/models/PatientRecord.js';
 import { Patient } from '../src/models/Patient.js';
 import { Medication } from '../src/models/Medication.js';
-import { LabResult, PendingTask } from '../src/models/ClinicalRecords.js';
+import { Culture, LabResult, PendingTask } from '../src/models/ClinicalRecords.js';
 import { VitalSigns } from '../src/models/VitalSigns.js';
 import { laboratoriosSection } from '../src/views/sections/laboratorios.js';
 
@@ -52,6 +52,55 @@ test('laboratorios: tabla reciente primero y gráfico usa historial completo cro
   assert.ok(html.indexOf('24/09/2026') < html.indexOf('01/09/2026') || !html.includes('01/09/2026'));
   assert.deepEqual(rendered[0][1], ['01/09/2026', '24/09/2026']);
   assert.deepEqual(rendered[0][2][0].data, [1, 2]);
+});
+
+test('resumen: incluye antibióticos antiguos y periodicidad aunque el cultivo tenga resultado', () => {
+  const trackedMedications = Array.from({ length: 7 }, (_, index) => new Medication({
+    id: index + 1, Activo: 'Sí', Requiere_Seguimiento_Dias: true,
+    Fecha_Inicio: `2026-09-${String(1 + index).padStart(2, '0')}`,
+    Nombre_Medicamento: `Antibiótico ${index + 1}`, Dosis_Frecuencia: 'cada 8 horas'
+  }));
+  const record = new PatientRecord({
+    patient: new Patient({ HC: '1', Nombre_Completo: 'Ana' }),
+    summary: {
+      counts: { activeMedications: 7, pendingCultures: 0 },
+      activeMedications: trackedMedications.slice(-5), trackedMedications,
+      periodicCultures: [new Culture({
+        id: 30, Tipo_Cultivo: 'Hemocultivo', Fecha_Envio: '2026-09-23',
+        Fecha_Envio_Hora: '2026-09-23T08:00:00-06:00', Es_Periodico: true,
+        Intervalo_Horas: 24, Resultado: 'Negativo'
+      })]
+    }
+  });
+  const html = sectionViewFor('resumen').render(record, ctx);
+  assert.match(html, /Antibiótico 1/);
+  assert.match(html, /Hemocultivo/);
+});
+
+test('pendientes: conserva atrasos de la RPC aunque no estén en la página visible', () => {
+  const hiddenOverdue = new PendingTask({
+    id: 99, HC: '1', Estado: 'Pendiente', Fecha_Programada: '2026-09-01',
+    Descripcion_Tarea: 'Pendiente antiguo fuera de página'
+  });
+  const record = new PatientRecord({
+    patient: new Patient({ HC: '1', Nombre_Completo: 'Ana' }),
+    tasks: [new PendingTask({ id: 1, HC: '1', Estado: 'Pendiente', Fecha_Programada: '2026-09-24', Descripcion_Tarea: 'Para hoy' })],
+    summary: { counts: { overdueTasks: 1 }, overdueTasks: [hiddenOverdue] }
+  });
+  const html = sectionViewFor('pendientes').render(record, ctx);
+  assert.match(html, /Pendiente antiguo fuera de página/);
+  assert.match(html, /Atrasados \(1\)/);
+});
+
+test('cultivos: muestra la hora local registrada para el envío periódico', () => {
+  const record = new PatientRecord({
+    patient: new Patient({ HC: '1', Nombre_Completo: 'Ana' }),
+    cultures: [new Culture({
+      id: 4, HC: '1', Tipo_Cultivo: 'Hemocultivo', Fecha_Envio: '2026-09-24',
+      Fecha_Envio_Hora: '2026-09-24T14:30:00-06:00', Resultado: 'Pendiente'
+    })]
+  });
+  assert.match(sectionViewFor('cultivos').render(record, ctx), /2:30/);
 });
 
 test('ApiService cae a búsqueda ILIKE si falta la función SQL', async () => {

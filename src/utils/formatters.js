@@ -33,6 +33,11 @@ function zonedParts(date) {
   return Object.fromEntries(F.parts.formatToParts(date).map(p => [p.type, p.value]));
 }
 
+export function dateTimeLocalValue(now = new Date()) {
+  const p = zonedParts(now);
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
+}
+
 /** '24/09/2026' o '—'. */
 export function fmtDate(value) {
   if (!value) return '—';

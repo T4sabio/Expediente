@@ -50,7 +50,10 @@ export const pendientesSection = {
 
   render(record, { today, pagination } = {}) {
     const tasks = record.tasks;
-    const overdue = tasks.filter(t => t.isOverdue(today));
+    const overdueSource = [...tasks, ...(record.summary?.overdueTasks ?? [])];
+    const overdue = [...new Map(overdueSource.filter(t => t.isOverdue(today)).map(t => [Number(t.id), t])).values()]
+      .sort((a, b) => a.scheduledDay(today).localeCompare(b.scheduledDay(today)));
+    const overdueCount = Number(record.summary?.counts?.overdueTasks ?? overdue.length);
     const todayTasks = tasks.filter(t => t.scheduledDay(today) === today);
     const future = tasks.filter(t => t.isFuture(today));
     const history = historyByDay(tasks, today);
@@ -67,9 +70,10 @@ export const pendientesSection = {
 
       ${overdue.length ? `
       <div class="mb-5">
-        <h3 class="text-xs font-semibold text-critical mb-1.5 flex items-center gap-1">⚠ Atrasados (${overdue.length})</h3>
+        <h3 class="text-xs font-semibold text-critical mb-1.5 flex items-center gap-1">⚠ Atrasados (${overdueCount})</h3>
         <div class="bg-critical-soft/40 border border-critical/30 rounded-lg px-3 py-1">
           ${group(overdue, { showDate: true, today })}
+          ${overdueCount > overdue.length ? `<p class="py-2 text-xs text-critical">Se muestran los ${overdue.length} atrasos más antiguos de ${overdueCount}.</p>` : ''}
         </div>
       </div>` : ''}
 

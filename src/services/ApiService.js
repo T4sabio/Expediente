@@ -10,19 +10,20 @@ const RPC_MISSING = new Set(['PGRST202', '42883']);
 const DEFAULT_PAGE_SIZE = 25;
 const SERVICES_CACHE_MS = 5 * 60 * 1000;
 
-const PATIENT_SELECT = 'HC,Nombre_Completo,Servicio,Cama,Edad,Fecha_Ingreso,Num_RayosX,Motivo_Consulta,Diagnosticos,Modificado_En';
+const PATIENT_SELECT = 'HC,Nombre_Completo,Servicio,Cama,Edad,Fecha_Ingreso,Fecha_Egreso,Estado_Episodio,Umbral_Signos_Horas,Num_RayosX,Motivo_Consulta,Diagnosticos,Tiene_EPOC,Modificado_En';
 const SELECTS = Object.freeze({
-  vitals: 'id,HC,Fecha_Hora,PA_Sistolica,PA_Diastolica,Frecuencia_Cardiaca,SpO2,Temperatura,Frecuencia_Respiratoria,PAM,Modificado_En',
+  vitals: 'id,HC,Fecha_Hora,PA_Sistolica,PA_Diastolica,Frecuencia_Cardiaca,SpO2,Oxigeno_Suplementario,Temperatura,Frecuencia_Respiratoria,PAM,Modificado_En',
   medications: 'id,HC,Nombre_Medicamento,Dosis_Frecuencia,Fecha_Inicio,Fecha_Omision,Activo,Dias_Tratamiento,Requiere_Seguimiento_Dias,Frecuencia_Horas,Motivo_Suspension,Modificado_En',
   labs: 'id,HC,Fecha,Tipo_Lab,Valor_Numerico,Resultado_Texto,Enlace_PDF_Hospital,Modificado_En',
   consultations: 'id,HC,Departamento_Consultado,Fecha_Envio,Fecha_Respuesta,Respuesta_Departamento,Modificado_En',
-  cultures: 'id,HC,Tipo_Cultivo,Fecha_Envio,Fecha_Resultado,Resultado,Observaciones_Microbiologia,Es_Periodico,Intervalo_Horas,Modificado_En',
+  cultures: 'id,HC,Tipo_Cultivo,Fecha_Envio,Fecha_Envio_Hora,Fecha_Resultado,Resultado,Observaciones_Microbiologia,Es_Periodico,Intervalo_Horas,Modificado_En',
   tasks: 'id,HC,Descripcion_Tarea,Fecha_Solicitud,Fecha_Programada,Justificacion_Observaciones,Estado,Fecha_Completado,Modificado_En'
 });
 
 const TABLE_FOR_LIST = Object.freeze({
   vitals: T.VITALS,
   medications: T.MEDS,
+  suspendedMedications: T.MEDS,
   labs: T.LABS,
   consultations: T.CONSULTS,
   cultures: T.CULTURES,
@@ -32,6 +33,7 @@ const TABLE_FOR_LIST = Object.freeze({
 const ORDER_FOR_LIST = Object.freeze({
   vitals: ['Fecha_Hora', false],
   medications: ['Fecha_Inicio', false],
+  suspendedMedications: ['Fecha_Inicio', false],
   labs: ['Fecha', false],
   consultations: ['Fecha_Envio', false],
   cultures: ['Fecha_Envio', false],
@@ -120,15 +122,17 @@ export class ApiService {
   async getPatientRecord(hc, { pageSize = DEFAULT_PAGE_SIZE } = {}) {
     const size = normalizePageSize(pageSize);
     const patientQuery = this.#db.from(T.PATIENTS).select(PATIENT_SELECT).eq('HC', hc).is('Eliminado_En', null).single();
-    const pageQueries = Object.keys(TABLE_FOR_LIST).map(listKey => this.#fetchListPage(hc, listKey, 1, size));
+    const listKeys = Object.keys(TABLE_FOR_LIST);
+    const pageQueries = listKeys.map(listKey => this.#fetchListPage(hc, listKey, 1, size));
     const summaryQuery = this.getPatientSummary(hc);
     const activityQuery = this.getPatientLastActivity(hc);
     const labHistoryQuery = this.#fetchAllLabs(hc);
     const [patient, ...rest] = await Promise.all([patientQuery, ...pageQueries, summaryQuery, activityQuery, labHistoryQuery]);
-    const pages = rest.slice(0, 6);
-    const summary = rest[6];
-    const activity = rest[7];
-    const labHistory = rest[8];
+    const pages = rest.slice(0, listKeys.length);
+    const pagesByKey = Object.fromEntries(listKeys.map((key, index) => [key, pages[index]]));
+    const summary = rest[listKeys.length];
+    const activity = rest[listKeys.length + 1];
+    const labHistory = rest[listKeys.length + 2];
 
     if (patient.error) throw new ApiError('No se pudo cargar el paciente seleccionado.', patient.error);
     if (!patient.data) throw new ApiError('No se encontró el paciente seleccionado.');
@@ -138,21 +142,22 @@ export class ApiService {
     if (summary.error) throw new ApiError('No se pudo cargar el resumen clínico.', summary.error);
     if (activity.error) throw new ApiError('No se pudo cargar la última actividad del expediente.', activity.error);
 
-    const vitals = pageModels('vitals', pages[0].data ?? []);
+    const vitals = pageModels('vitals', pagesByKey.vitals.data ?? []);
     // La página 1 se pide descendente para priorizar actualidad; el modelo conserva orden cronológico para el gráfico.
     vitals.reverse();
     return new PatientRecord({
       patient: new Patient(patient.data),
       vitals,
-      medications: pageModels('medications', pages[1].data ?? []),
-      labs: pageModels('labs', pages[2].data ?? []),
+      medications: pageModels('medications', pagesByKey.medications.data ?? []),
+      suspendedMedications: pageModels('medications', pagesByKey.suspendedMedications.data ?? []),
+      labs: pageModels('labs', pagesByKey.labs.data ?? []),
       labHistory,
-      consultations: pageModels('consultations', pages[3].data ?? []),
-      cultures: pageModels('cultures', pages[4].data ?? []),
-      tasks: pageModels('tasks', pages[5].data ?? []),
+      consultations: pageModels('consultations', pagesByKey.consultations.data ?? []),
+      cultures: pageModels('cultures', pagesByKey.cultures.data ?? []),
+      tasks: pageModels('tasks', pagesByKey.tasks.data ?? []),
       summary: summary.data ? { ...summary.data, lastActivity: activity.data?.[0] ?? null } : null,
-      pagination: Object.fromEntries(Object.keys(TABLE_FOR_LIST).map((key, i) => [key, {
-        ...pages[i].pagination, listKey: key
+      pagination: Object.fromEntries(listKeys.map(key => [key, {
+        ...pagesByKey[key].pagination, listKey: key
       }]))
     });
   }
@@ -162,7 +167,7 @@ export class ApiService {
     if (!TABLE_FOR_LIST[listKey]) throw new ApiError('Sección de expediente inválida.');
     const response = await this.#fetchListPage(hc, listKey, page, normalizePageSize(pageSize));
     if (response.error) throw new ApiError(response.error.message, response.error);
-    const items = pageModels(listKey, response.data ?? []);
+    const items = pageModels(listKey === 'suspendedMedications' ? 'medications' : listKey, response.data ?? []);
     if (listKey === 'vitals') items.reverse();
     return {
       items,
@@ -259,11 +264,29 @@ export class ApiService {
     if (latest.error) throw new ApiError(latest.error.message, latest.error);
     const labsRows = await this.#db.from(T.LABS).select('Tipo_Lab').eq('HC', hc).order('Fecha', { ascending: false }).limit(100);
     if (labsRows.error) throw new ApiError(labsRows.error.message, labsRows.error);
+    const rows = async (listKey, filter, { limit, ascending = false } = {}) => {
+      let query = this.#db.from(TABLE_FOR_LIST[listKey]).select(SELECTS[listKey]).eq('HC', hc);
+      query = filter?.(query) ?? query;
+      if (ORDER_FOR_LIST[listKey]) query = query.order(ORDER_FOR_LIST[listKey][0], { ascending });
+      if (limit) query = query.limit(limit);
+      const { data, error } = await query;
+      if (error) throw new ApiError(error.message, error);
+      return pageModels(listKey, data ?? []);
+    };
+    const [activeMedications, trackedMedications, openTasks, pendingCultures, periodicCultures, unansweredConsultations] = await Promise.all([
+      rows('medications', query => query.eq('Activo', 'Sí'), { limit: 5 }),
+      rows('medications', query => query.eq('Activo', 'Sí').eq('Requiere_Seguimiento_Dias', true), { ascending: true }),
+      rows('tasks', query => query.eq('Estado', 'Pendiente')),
+      rows('cultures', query => query.or('Resultado.is.null,Resultado.eq.Pendiente'), { limit: 5 }),
+      rows('cultures', query => query.eq('Es_Periodico', true)),
+      rows('consultations', query => query.is('Fecha_Respuesta', null), { limit: 5 })
+    ]);
+    const overdueTasks = openTasks.filter(task => task.isOverdue());
     return {
-      counts: { vitals, medications: meds, labs, consultations: consults, cultures, tasks, activeMedications: medsActive, openTasks: tasksOpen, pendingCultures: culturesPending, unansweredConsultations: consultsOpen },
+      counts: { vitals, medications: meds, labs, consultations: consults, cultures, tasks, activeMedications: medsActive, openTasks: tasksOpen, pendingCultures: culturesPending, unansweredConsultations: consultsOpen, overdueTasks: overdueTasks.length },
       labTypes: [...new Set((labsRows.data ?? []).map(r => r.Tipo_Lab).filter(Boolean))],
       latestVital: latest.data ?? null,
-      activeMedications: [], openTasks: [], pendingCultures: [], unansweredConsultations: []
+      activeMedications, trackedMedications, openTasks, overdueTasks, pendingCultures, periodicCultures, unansweredConsultations
     };
   }
 
@@ -273,9 +296,21 @@ export class ApiService {
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
     let query = this.#db.from(table).select(SELECTS[listKey], { count: 'exact' }).eq('HC', hc).order(orderColumn, { ascending }).range(from, to);
+    if (listKey === 'medications') query = query.eq('Activo', 'Sí');
+    if (listKey === 'suspendedMedications') query = query.eq('Activo', 'No');
     // The patient RLS policy already limits deleted patients; this explicit existence
     // check is intentionally kept in the database migration, not duplicated in every query.
-    return query;
+    const response = await query;
+    const total = Number(response.count ?? response.data?.length ?? 0);
+    return {
+      ...response,
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / pageSize))
+      }
+    };
   }
 
   async #fetchAllLabs(hc) {
@@ -402,7 +437,7 @@ export class ApiService {
 
   unsuspendMedication(id, expectedModificadoEn) {
     return this.#runWithConflictCheck(T.MEDS, id,
-      { Activo: 'Sí', Motivo_Suspension: null }, expectedModificadoEn,
+      { Activo: 'Sí', Fecha_Omision: null, Motivo_Suspension: null }, expectedModificadoEn,
       'Otra persona ya actualizó este medicamento mientras tanto.', SELECTS.medications, Medication);
   }
 

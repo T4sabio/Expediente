@@ -2,7 +2,7 @@
 
 ## Puesta en marcha
 ```bash
-npm install
+npm ci
 cp .env.example .env.local     # completa VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY
 # Supabase → SQL Editor: ejecutar EN ORDEN
 #   0) supabase/000_schema.sql            ← crea las 7 tablas (solo en un proyecto NUEVO/vacío)
@@ -19,6 +19,7 @@ cp .env.example .env.local     # completa VITE_SUPABASE_URL y VITE_SUPABASE_ANON
 #  11) supabase/011_fechas_zona_guatemala.sql ← fechas clínicas en calendario local
 #  12) supabase/012_round_print_audit.sql ← ronda completa y auditoría de impresión
 #  13) supabase/013_permissions_idempotency_audit.sql ← permisos finos, idempotencia y auditoría minimizada
+# La CLI aplica las copias versionadas de supabase/migrations/; aplica 014 y 015 después de 013 en proyectos alojados.
 npm run dev
 npm test                       # pruebas unitarias (sin dependencias, usa node:test)
 npm run build                  # salida en dist/
@@ -105,7 +106,7 @@ Antes de exponer la aplicación a datos clínicos reales, ejecuta `supabase/006_
 
 La sesión de navegador se bloquea automáticamente después de 15 minutos sin actividad y requiere iniciar sesión de nuevo. El botón de sesión también bloquea la sesión actual. El cierre utiliza alcance local para no revocar sesiones del mismo usuario en otros dispositivos.
 
-El proyecto requiere Node.js 22.12+ y fija las versiones directas del toolchain. La CI de GitHub ejecuta `npm run check` y `npm run audit`; cuando exista `package-lock.json`, la instalación se hace estrictamente con `npm ci`. En este ZIP el lockfile queda pendiente de generarse en un entorno con acceso al registro npm.
+El proyecto requiere Node.js 22.12+ y fija las versiones directas del toolchain. `package-lock.json` fija también las dependencias transitivas; CI instala con `npm ci`.
 
 ## Fase 2 — confiabilidad, integración y rendimiento
 
@@ -121,7 +122,7 @@ supabase db reset
 supabase test db
 ```
 
-`db reset` aplica todas las migraciones en orden (`000` → `013`) y carga únicamente datos sintéticos de desarrollo.
+`supabase/migrations/` contiene las migraciones versionadas que descubre la CLI. `db reset` las aplica en orden (`000` → `015`) y carga únicamente datos sintéticos de desarrollo. Los SQL numerados en la raíz de `supabase/` se conservan como fuentes para el SQL Editor en proyectos alojados.
 
 ### Pruebas contra Supabase real
 
@@ -172,6 +173,8 @@ La versión de Fase 3 añade:
 
 `000_schema.sql` → `001_search_and_indexes.sql` → `002_auth_rls_audit.sql` → `003_realtime.sql` → `004_correcciones_produccion.sql` → `005_pam_antibioticos_cultivos_periodicos.sql` → `006_hardening_produccion.sql` → `007_phase2_performance.sql` → `008_phase3_product.sql` → `009_auth_approval_required.sql` → `010_patient_lifecycle_rpc.sql` → `011_fechas_zona_guatemala.sql` → `012_round_print_audit.sql` → `013_permissions_idempotency_audit.sql`.
 
+Después de 013, ejecutar `014_resumen_clinico_y_contexto.sql` y `015_estado_episodio_y_umbral.sql`, en ese orden.
+
 ## Fase 4 — confiabilidad clínica y permisos
 
 Aplica `013_permissions_idempotency_audit.sql` después de `012`. Esta migración
@@ -187,5 +190,9 @@ impresora o "Guardar como PDF"; ambos se registran como solicitud de impresión 
 exportación iniciada, no como confirmación de que el archivo se haya guardado.
 
 Las pruebas de base de datos están en `supabase/tests/database/phase2_test.sql`, `phase3_test.sql` y `phase4_test.sql`; se ejecutan mediante `supabase test db` en CI.
+
+## Fase 5 — contexto clínico y egresos
+
+La migración 014 agrega el antecedente explícito de EPOC, el oxígeno por toma y la hora de envío de cultivos periódicos. La RPC de resumen prioriza los tratamientos de mayor duración, conserva periodicidad tras un resultado y expone atrasos aunque no estén en la página visible. La migración 015 permite registrar traslado, alta o defunción y sacar esos episodios de la ronda; el umbral de signos se configura por paciente (1–720 h) y la duración prevista por medicamento.
 
 - **Build Vite 8/Rolldown:** la segmentación manual usa `build.rolldownOptions.output.codeSplitting`; no se utiliza la forma objeto obsoleta de `manualChunks`.

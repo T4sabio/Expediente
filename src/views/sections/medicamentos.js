@@ -5,8 +5,10 @@ export const medicamentosSection = {
   id: 'medicamentos',
 
   render(record, { today, pagination } = {}) {
-    const rows = record.medications.length
-      ? record.medications.map(m => {
+    const medicationRows = (medications, active) => {
+      const visible = medications.filter(m => m.isActive === active);
+      return visible.length
+      ? visible.map(m => {
           const days = m.treatmentDays(today);
           const prolonged = m.isProlonged(today);
           return `<tr>
@@ -24,9 +26,15 @@ export const medicamentosSection = {
           </tr>`;
         }).join('')
       : emptyRow(6);
+    };
 
+    const suspended = record.suspendedMedications ?? [];
     return `${sectionHeader('Medicamentos', 'modal-med')}
-      ${tableWrap(rows, ['Medicamento', 'Dosis / frecuencia', 'Inicio', 'Días de tratamiento', 'Estado', ''])}
-      ${paginationControls(pagination, 'medicamentos')}`;
+      <h3 class="mb-2 text-xs font-semibold text-[#3C4A46]">Activos (${pagination?.total ?? record.medications.length})</h3>
+      ${tableWrap(medicationRows(record.medications, true), ['Medicamento', 'Dosis / frecuencia', 'Inicio', 'Días de tratamiento', 'Estado', ''])}
+      ${paginationControls(pagination, 'medicamentos activos')}
+      <h3 class="mt-6 mb-2 text-xs font-semibold text-[#5C6B67]">Suspendidos (${record.pagination?.suspendedMedications?.total ?? suspended.length})</h3>
+      ${tableWrap(medicationRows(suspended, false), ['Medicamento', 'Dosis / frecuencia', 'Inicio', 'Días de tratamiento', 'Estado', ''])}
+      ${paginationControls(record.pagination?.suspendedMedications, 'medicamentos suspendidos')}`;
   }
 };

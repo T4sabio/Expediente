@@ -54,7 +54,7 @@ export function badge(text, tone) {
 
 export function summaryPanel(title, count, items, gotoSection) {
   const list = items.slice(0, 3).map(i => `<li class="text-xs text-[#5C6B67] truncate">· ${esc(i)}</li>`).join('')
-    || '<li class="text-xs text-[#9AA6A2]">Sin datos</li>';
+    || `<li class="text-xs ${count > 0 ? 'text-warn' : 'text-[#9AA6A2]'}">${count > 0 ? 'Detalles no disponibles; abre la sección' : 'Sin datos'}</li>`;
   return `<button type="button" data-action="switch-section" data-section="${esc(gotoSection)}"
     class="text-left w-full rounded-lg border border-hairline bg-white p-4 cursor-pointer hover:border-accent focus:outline-none focus:ring-2 focus:ring-accent transition">
     <div class="flex items-baseline justify-between">

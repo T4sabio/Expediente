@@ -1,4 +1,5 @@
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+import { dateTimeLocalValue } from '../utils/formatters.js';
 
 /**
  * Maneja apertura/cierre de modales con foco accesible (WCAG 2.4.3):
@@ -36,7 +37,19 @@ export class ModalManager {
       form.reset();
       this.#dirtyForms.delete(form);
       for (const [name, value] of Object.entries(values)) {
-        if (form.elements[name]) form.elements[name].value = value ?? '';
+        const field = form.elements[name];
+        if (!field) continue;
+        if (field.type === 'checkbox') field.checked = value === true || value === 'true';
+        else field.value = value ?? '';
+      }
+    }
+    if (form && ['modal-vital', 'modal-cultivo'].includes(id)) {
+      const fieldName = id === 'modal-vital' ? 'Fecha_Hora' : 'Fecha_Envio_Hora';
+      const dateField = form.elements[fieldName];
+      if (dateField) {
+        const now = dateTimeLocalValue();
+        if (!dateField.value) dateField.value = now;
+        dateField.max = now;
       }
     }
     modal.classList.remove('hidden');

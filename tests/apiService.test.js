@@ -128,6 +128,21 @@ test('getPatientRecord: recupera todas las páginas del historial de laboratorio
   assert.equal(record.labHistory.length, 1001);
 });
 
+test('getPatientSectionPage: filtra medicamentos suspendidos y calcula sus metadatos de página', async () => {
+  const filters = [];
+  const builder = {
+    select: () => builder,
+    eq: (key, value) => { filters.push([key, value]); return builder; },
+    order: () => builder,
+    range: () => builder,
+    then(resolve) { return Promise.resolve({ data: [], count: 40, error: null }).then(resolve); }
+  };
+  const api = new ApiService({ from: () => builder });
+  const page = await api.getPatientSectionPage('HC-1', 'suspendedMedications', 2);
+  assert.deepEqual(filters, [['HC', 'HC-1'], ['Activo', 'No']]);
+  assert.deepEqual(page.pagination, { page: 2, pageSize: 25, total: 40, totalPages: 2, listKey: 'suspendedMedications' });
+});
+
 test('getPatientRecord: paciente inexistente lanza un error legible', async () => {
   const db = new MockSupabase({ rpcs: { resumen_paciente: { data: { counts: {}, labTypes: [], latestVital: null }, error: null } }, tables: { DB_Pacientes: { data: null, error: null } } });
   const api = new ApiService(db);

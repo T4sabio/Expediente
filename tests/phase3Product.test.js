@@ -55,9 +55,21 @@ test('fase 3: ronda alerta por signos atrasados, no por tareas futuras, e indica
   ]);
   assert.match(html, /muestra 1 de 101 pacientes activos/);
   assert.match(html, /1 punto a revisar/);
-  assert.match(html, /Signos &gt;24 h/);
+  assert.match(html, /Signos atrasados/);
   assert.doesNotMatch(html, /1 pendientes para hoy/);
   assert.doesNotMatch(html, /Al día/);
+});
+
+test('ronda respeta el umbral clínico devuelto por SQL aunque los signos tengan más de 24 horas', () => {
+  const oldVital = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+  const html = renderRoundOverview([{
+    hc: '4', nombre_completo: 'Piso', servicio: 'Piso', cama: '4',
+    latest_vital_at: oldVital, vitals_overdue: false,
+    active_medications: 0, due_tasks: 0, pending_cultures: 0,
+    unanswered_consultations: 0, total_active: 1
+  }]);
+  assert.match(html, /Al día/);
+  assert.doesNotMatch(html, /Signos atrasados/);
 });
 
 test('fase 3: PatientRecord conserva timeline sin alterar el historial paginado', () => {
@@ -96,6 +108,15 @@ test('fase 3: la migración corrige ronda y registra impresiones', () => {
   assert.match(migration, /vitals_overdue/);
   assert.match(migration, /registrar_impresion_expediente/);
   assert.match(migration, /'PRINT'/);
+});
+
+test('ciclo de vida del episodio saca egresos de la ronda y permite ajustar el umbral', () => {
+  const migration = read('supabase/015_estado_episodio_y_umbral.sql');
+  assert.match(migration, /Estado_Episodio.*Hospitalizado/);
+  assert.match(migration, /Estado_Episodio.*Trasladado/);
+  assert.match(migration, /Umbral_Signos_Horas/);
+  assert.match(migration, /make_interval\(hours => p\."Umbral_Signos_Horas"\)/);
+  assert.match(migration, /create or replace function public\.ronda_hoy/);
 });
 
 test('fase 4: permisos, auditoría minimizada e idempotencia tienen contrato UI/API/SQL', () => {

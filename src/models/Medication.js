@@ -18,13 +18,17 @@ export class Medication {
   treatmentDays(today = todayISODate()) {
     const start = calendarDateOf(this.Fecha_Inicio);
     if (!start) return Number(this.Dias_Tratamiento) || 0;
-    const end = this.Fecha_Omision ? calendarDateOf(this.Fecha_Omision) : today;
+    const end = !this.isActive && this.Fecha_Omision ? calendarDateOf(this.Fecha_Omision) : today;
     const elapsedDays = calendarDaysDiff(start, end);
     return elapsedDays === null || elapsedDays < 0 ? 0 : elapsedDays + 1;
   }
 
   isProlonged(today) {
-    return this.isActive && this.isTracked && this.treatmentDays(today) >= PROLONGED_TREATMENT_DAYS;
+    const plannedDays = Number(this.Dias_Tratamiento);
+    const threshold = Number.isFinite(plannedDays) && plannedDays > 0
+      ? plannedDays
+      : PROLONGED_TREATMENT_DAYS;
+    return this.isActive && this.isTracked && this.treatmentDays(today) >= threshold;
   }
 
   /** Marca de "requiere seguimiento de días de cobertura" (típicamente antibióticos). */
@@ -55,6 +59,11 @@ export class Medication {
     if (!dosis) throw new ValidationError('La dosis y frecuencia son obligatorias.');
     if (!form.Fecha_Inicio) throw new ValidationError('La fecha de inicio es obligatoria.');
     const horasRaw = String(form.Frecuencia_Horas ?? '').trim();
+    const daysRaw = String(form.Dias_Tratamiento ?? '').trim();
+    const plannedDays = daysRaw === '' ? null : Number(daysRaw);
+    if (plannedDays !== null && (!Number.isInteger(plannedDays) || plannedDays < 1)) {
+      throw new ValidationError('La duración prevista debe ser un número entero mayor que cero.');
+    }
     return new Medication({
       HC: hc,
       Nombre_Medicamento: nombre,
@@ -62,7 +71,8 @@ export class Medication {
       Fecha_Inicio: form.Fecha_Inicio,
       Activo: form.Activo === 'No' ? 'No' : 'Sí',
       Requiere_Seguimiento_Dias: form.Requiere_Seguimiento_Dias === 'on' || form.Requiere_Seguimiento_Dias === true,
-      Frecuencia_Horas: horasRaw === '' ? null : Number(horasRaw)
+      Frecuencia_Horas: horasRaw === '' ? null : Number(horasRaw),
+      Dias_Tratamiento: plannedDays
     });
   }
 

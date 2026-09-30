@@ -151,6 +151,7 @@ export class DashboardView {
     body.classList.remove('density-compact', 'density-normal', 'density-comfortable');
     body.classList.add(`density-${density}`);
     body.classList.toggle('contrast-high', Boolean(highContrast));
+    this.#doc.querySelector('[data-action="toggle-contrast"]')?.setAttribute('aria-pressed', String(Boolean(highContrast)));
   }
 
   setNovedadesCount(count) {
@@ -218,7 +219,7 @@ export class DashboardView {
     this.#el.header.innerHTML = `
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div class="min-w-[240px]">
-          <div class="flex items-center gap-2 text-xs text-[#5C6B67] font-mono-data">${esc(g.HC)} · Ingreso ${fmtDate(g.Fecha_Ingreso)}</div>
+          <div class="flex items-center gap-2 text-xs text-[#5C6B67] font-mono-data">${esc(g.HC)} · Ingreso ${fmtDate(g.Fecha_Ingreso)} · ${esc(g.Estado_Episodio || 'Hospitalizado')}</div>
           <div class="flex items-center gap-2 mt-0.5">
             <h1 class="text-xl font-semibold">${esc(g.Nombre_Completo)}</h1>
             <button data-action="editar-paciente" title="Editar paciente" class="p-1.5 rounded-md hover:bg-[#EEF2F1] transition">${EDIT_ICON}</button>

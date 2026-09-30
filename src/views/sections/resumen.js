@@ -20,11 +20,12 @@ export const resumenSection = {
     const summary = record.summary ?? {};
     const counts = summary.counts ?? {};
     const last = record.latestVitals;
-    const vitalContext = { age: record.patient.age(), diagnoses: record.patient.Diagnosticos };
+    const vitalContext = { age: record.patient.age(), hasCOPD: record.patient.Tiene_EPOC };
 
     const meds = summary.activeMedications?.length ? summary.activeMedications : record.activeMedications;
     const tasks = summary.openTasks?.length ? summary.openTasks : record.openTasks;
     const cultures = summary.pendingCultures?.length ? summary.pendingCultures : record.pendingCultures;
+    const periodicCultures = summary.periodicCultures?.length ? summary.periodicCultures : cultures;
     const consults = summary.unansweredConsultations?.length ? summary.unansweredConsultations : record.unansweredConsultations;
 
     const vitalCards = last
@@ -32,16 +33,16 @@ export const resumenSection = {
           const flag = last.isAbnormal(key, vitalContext);
           return `<div class="rounded-lg border ${flag ? 'border-critical/40 bg-critical-soft' : 'border-hairline bg-white'} p-3">
             <div class="text-[11px] text-[#5C6B67]">${VITAL_LABELS[key]}</div>
-            <div class="text-lg font-mono-data font-semibold ${flag ? 'text-critical' : 'text-ink'}">${esc(orDash(last[key]))}${abnormalMark(key, last[key], vitalContext)}</div>
+            <div class="text-lg font-mono-data font-semibold ${flag ? 'text-critical' : 'text-ink'}">${esc(orDash(last[key]))}${key === 'SpO2' && last.Oxigeno_Suplementario === true ? '<span class="ml-1 text-[10px] font-sans text-[#5C6B67]">O2 suplementario</span>' : ''}${abnormalMark(key, last[key], vitalContext)}</div>
           </div>`;
         }).join('')
       : '<p class="text-sm text-[#5C6B67]">Sin registros de signos vitales.</p>';
 
     // Antibióticos con seguimiento de días de cobertura, el que lleva más días primero
     // (es el que más urge revisar/suspender o ajustar).
-    const tracked = meds.filter(m => m.isTracked)
+    const tracked = (summary.trackedMedications?.length ? summary.trackedMedications : meds.filter(m => m.isTracked))
       .sort((a, b) => b.treatmentDays(today) - a.treatmentDays(today));
-    const periodicLines = periodicCultureLines(cultures, today);
+    const periodicLines = periodicCultureLines(periodicCultures, today);
 
     return `
       <div class="flex items-center justify-between mb-3">

@@ -31,10 +31,11 @@ const SORT_KEYS = Object.freeze({
 });
 
 export class PatientRecord {
-  constructor({ patient, vitals = [], medications = [], labs = [], labHistory = labs, consultations = [], cultures = [], tasks = [], summary = null, pagination = {}, timeline = [] }) {
+  constructor({ patient, vitals = [], medications = [], suspendedMedications = [], labs = [], labHistory = labs, consultations = [], cultures = [], tasks = [], summary = null, pagination = {}, timeline = [] }) {
     this.patient = patient;
     this.vitals = vitals;
     this.medications = medications;
+    this.suspendedMedications = suspendedMedications;
     this.labs = labs;
     this.labHistory = labHistory;
     this.consultations = consultations;
@@ -187,6 +188,27 @@ export class PatientRecord {
    * actualizaciones optimistas y conserva la instancia de los demás elementos.
    */
   withPatchedItem(listKey, id, patch) {
+    if (listKey === 'medications' && Object.hasOwn(patch, 'Activo')) {
+      const source = this.medications.find(item => Number(item.id) === Number(id))
+        ?? this.suspendedMedications.find(item => Number(item.id) === Number(id));
+      if (!source) return this;
+      const patched = Object.assign(Object.create(Object.getPrototypeOf(source)), source, patch);
+      const active = patched.isActive;
+      const medications = [...this.medications.filter(item => Number(item.id) !== Number(id)), ...(active ? [patched] : [])];
+      const suspendedMedications = [...this.suspendedMedications.filter(item => Number(item.id) !== Number(id)), ...(!active ? [patched] : [])];
+      const pagination = { ...this.pagination };
+      for (const [key, belongs] of [['medications', active], ['suspendedMedications', !active]]) {
+        const meta = pagination[key];
+        if (meta) pagination[key] = {
+          ...meta,
+          total: Math.max(0, Number(meta.total ?? 0) + (belongs ? 1 : -1)),
+          totalPages: Math.max(1, Math.ceil(Math.max(0, Number(meta.total ?? 0) + (belongs ? 1 : -1)) / Number(meta.pageSize || 25)))
+        };
+      }
+      return Object.assign(Object.create(Object.getPrototypeOf(this)), this, {
+        medications, suspendedMedications, pagination
+      });
+    }
     const list = this[listKey].map(item =>
       Number(item.id) === Number(id)
         ? Object.assign(Object.create(Object.getPrototypeOf(item)), item, patch)
@@ -223,8 +245,11 @@ function normalizeSummary(input = {}) {
       ? (input.latestVital instanceof VitalSigns ? input.latestVital : new VitalSigns(input.latestVital))
       : null,
     activeMedications: (input.activeMedications ?? []).map(r => r instanceof Medication ? r : new Medication(r)),
+    trackedMedications: (input.trackedMedications ?? []).map(r => r instanceof Medication ? r : new Medication(r)),
     openTasks: (input.openTasks ?? []).map(r => r instanceof PendingTask ? r : new PendingTask(r)),
+    overdueTasks: (input.overdueTasks ?? []).map(r => r instanceof PendingTask ? r : new PendingTask(r)),
     pendingCultures: (input.pendingCultures ?? []).map(r => r instanceof Culture ? r : new Culture(r)),
+    periodicCultures: (input.periodicCultures ?? []).map(r => r instanceof Culture ? r : new Culture(r)),
     unansweredConsultations: (input.unansweredConsultations ?? []).map(r => r instanceof Consultation ? r : new Consultation(r)),
     lastActivity: input.lastActivity ? { ...input.lastActivity } : null
   };

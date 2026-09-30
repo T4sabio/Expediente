@@ -14,6 +14,7 @@ export class VitalSigns {
     this.HC = row.HC;
     this.Fecha_Hora = row.Fecha_Hora;
     for (const k of KEYS) this[k] = row[k] ?? null;
+    this.Oxigeno_Suplementario = row.Oxigeno_Suplementario ?? null;
     // PAM: si la columna generada de la BD ya la trae (row.PAM), se respeta esa (fuente
     // única de verdad); si no existe todavía en el entorno, se calcula en el cliente
     // como espejo — mismo patrón defensivo que ya usa la app con RPCs faltantes.
@@ -29,7 +30,7 @@ export class VitalSigns {
     return Math.round((d + (s - d) / 3) * 10) / 10;
   }
 
-  static rangeFor(key, { age, diagnoses = '' } = {}) {
+  static rangeFor(key, { age, hasCOPD = false } = {}) {
     let ageYears = Number(age?.valor);
     if (!Number.isFinite(ageYears)) ageYears = null;
     else if (age.unidad === 'meses') ageYears /= 12;
@@ -52,7 +53,7 @@ export class VitalSigns {
     }
 
     const range = VITAL_RANGES[key];
-    if (key === 'SpO2' && /\bEPOC\b|enfermedad pulmonar obstructiva/i.test(diagnoses)) return [88, 100];
+    if (key === 'SpO2' && hasCOPD === true) return [88, 100];
     return range;
   }
 
@@ -78,28 +79,36 @@ export class VitalSigns {
   static fromForm(form, hc) {
     const fecha = wallTimeToOffsetISO(form.Fecha_Hora);
     if (!fecha) throw new ValidationError('La fecha y hora no es válida.');
+    if (Date.parse(fecha) > Date.now() + 60_000) throw new ValidationError('La fecha y hora no puede estar en el futuro.');
     const row = { HC: hc, Fecha_Hora: fecha };
     for (const k of KEYS) row[k] = form[k] === '' || form[k] == null ? null : Number(form[k]);
+    row.Oxigeno_Suplementario = form.Oxigeno_Suplementario === 'Sí' || form.Oxigeno_Suplementario === true
+      ? true
+      : form.Oxigeno_Suplementario === 'No' || form.Oxigeno_Suplementario === false ? false : null;
     return new VitalSigns(row).validate();
   }
 
   /** Rechaza valores imposibles (errores de digitación), no valores simplemente anormales. */
   validate() {
+    if (KEYS.every(k => this[k] === null || this[k] === undefined)) {
+      throw new ValidationError('Captura al menos un signo vital.');
+    }
     for (const k of KEYS) {
+      if (this[k] === null || this[k] === undefined) continue;
       const [min, max] = VITAL_LIMITS[k];
       const v = this[k];
-      if (!Number.isFinite(v) || v < min || v > max) {
+      if (!Number.isFinite(v) || v < min || v > max || (k !== 'Temperatura' && !Number.isInteger(v))) {
         throw new ValidationError(`${VITAL_LABELS[k]}: el valor debe estar entre ${min} y ${max}.`);
       }
     }
-    if (this.PA_Sistolica <= this.PA_Diastolica) {
+    if (this.PA_Sistolica != null && this.PA_Diastolica != null && this.PA_Sistolica <= this.PA_Diastolica) {
       throw new ValidationError('La PA sistólica debe ser mayor que la diastólica.');
     }
     return this;
   }
 
   toRow() {
-    const row = { HC: this.HC, Fecha_Hora: this.Fecha_Hora };
+    const row = { HC: this.HC, Fecha_Hora: this.Fecha_Hora, Oxigeno_Suplementario: this.Oxigeno_Suplementario };
     for (const k of KEYS) row[k] = this[k];
     return row;
   }

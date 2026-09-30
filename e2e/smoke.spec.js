@@ -8,7 +8,7 @@ test.afterAll(async () => { await cleanupE2E(fixtures); });
 
 test('shell de autenticación funciona', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByText('Ronda Clínica')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Ronda Clínica' })).toBeVisible();
   await expect(page.getByLabel('Correo institucional')).toBeVisible();
   await expect(page.getByLabel('Contraseña')).toBeVisible();
 });
@@ -17,6 +17,10 @@ test('shell de producto expone ronda de hoy y command palette', async ({ page })
   await page.goto('/');
   await expect(page.getByRole('button', { name: /abrir comandos/i }).first()).toBeVisible();
   await expect(page.getByRole('heading', { name: /empieza por la ronda de hoy/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /cambiar densidad de interfaz/i })).toBeVisible();
+  const contrast = page.getByRole('button', { name: /alternar alto contraste/i });
+  await expect(contrast).toBeVisible();
+  await expect(contrast).toHaveAttribute('aria-pressed', 'false');
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+KeyK' : 'Control+KeyK');
   await expect(page.getByRole('dialog', { name: /comandos de ronda clínica/i })).toBeVisible();
 });
@@ -25,6 +29,11 @@ test('flujo E2E autenticado: login, búsqueda y apertura de expediente', async (
   test.skip(!e2eEnabled, 'El E2E autenticado necesita un Supabase de prueba local/CI.');
   await page.goto('/');
   await login(page, fixtures);
+  const contrast = page.getByRole('button', { name: /alternar alto contraste/i });
+  await contrast.click();
+  await expect(contrast).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: /cambiar densidad de interfaz/i }).click();
+  await expect(page.locator('body')).toHaveClass(/density-(compact|normal|comfortable)/);
   const search = page.getByRole('combobox', { name: /buscar paciente/i });
   await search.fill(fixtures.hc);
   const option = page.getByRole('option').filter({ hasText: fixtures.hc }).first();
