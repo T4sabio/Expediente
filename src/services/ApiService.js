@@ -342,9 +342,13 @@ export class ApiService {
       for (const table of tables) {
         channel.on('postgres_changes', {
           event: '*', schema: 'public', table, filter: `HC=eq.${filterValue}`
-        }, payload => onChange({ ...payload, table }));
+        }, payload => {
+          if (!stopped && channel === subscribedChannel) onChange({ ...payload, table });
+        });
       }
+      const subscribedChannel = channel;
       channel.subscribe(status => {
+        if (stopped || channel !== subscribedChannel) return;
         onStatus?.(status);
         if (status === 'SUBSCRIBED') {
           attempt = 0;

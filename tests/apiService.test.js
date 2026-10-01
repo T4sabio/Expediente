@@ -23,7 +23,7 @@ class MockSupabase {
   constructor({ tables = {}, rpcs = {} } = {}) {
     this.tables = tables;
     this.rpcs = rpcs;
-    this.calls = { from: [], rpc: [], removedChannels: [] };
+    this.calls = { from: [], rpc: [], channels: [], removedChannels: [] };
   }
   from(table) {
     this.calls.from.push(table);
@@ -39,7 +39,8 @@ class MockSupabase {
   }
   channel(name) {
     const handlers = [];
-    const ch = { name, on: (...args) => { handlers.push(args); return ch; }, subscribe: () => ch, _handlers: handlers };
+    const ch = { name, on: (...args) => { handlers.push(args); return ch; }, subscribe: callback => { ch._status = callback; return ch; }, _handlers: handlers };
+    this.calls.channels.push(ch);
     return ch;
   }
   removeChannel(ch) { this.calls.removedChannels.push(ch); }
@@ -318,6 +319,17 @@ test('subscribeToPatient: se suscribe a las 7 tablas y la función de cancelaci�
   const unsubscribe = api.subscribeToPatient('2026-1', () => {});
   unsubscribe();
   assert.equal(db.calls.removedChannels.length, 1);
+});
+
+test('subscribeToPatient: ignora estados tardíos del canal después de cancelar', async () => {
+  const db = new MockSupabase();
+  const statuses = [];
+  const api = new ApiService(db);
+  const unsubscribe = api.subscribeToPatient('2026-1', () => {}, status => statuses.push(status));
+  const channel = db.calls.channels[0];
+  await unsubscribe();
+  channel?._status?.('CLOSED');
+  assert.deepEqual(statuses, []);
 });
 
 /* ---------------------------- Producto Fase 3 ---------------------------- */

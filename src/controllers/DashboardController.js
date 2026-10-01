@@ -351,6 +351,10 @@ export class DashboardController {
   }
 
   #handleVisibilityChange() {
+    if (document.visibilityState === 'hidden') {
+      this.#stopRealtime();
+      return;
+    }
     if (document.visibilityState !== 'visible' || !this.#state.get().authed) return;
     const elapsed = this.#lastActivityAt ? Date.now() - this.#lastActivityAt : 0;
     if (elapsed >= DashboardController.IDLE_TIMEOUT_MS) {
@@ -358,6 +362,8 @@ export class DashboardController {
       return;
     }
     this.#touchActivity();
+    const hc = this.#state.get().currentHC;
+    if (hc) this.#watchRealtime(hc);
   }
 
   #touchActivity() {

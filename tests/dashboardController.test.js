@@ -21,6 +21,7 @@ globalThis.sessionStorage = {
   removeItem: key => sessionStorageData.delete(key)
 };
 globalThis.document = {
+  visibilityState: 'visible',
   addEventListener(type, fn) { (listeners[type] ??= []).push(fn); },
   removeEventListener() {},
   getElementById(id) { return domElements.get(id) ?? null; },
@@ -115,6 +116,32 @@ test('init(): con sesión activa, entra directo y carga servicios', async () => 
   await controller.init();
   assert.ok(view.calls.some(c => c[0] === 'hideLoginScreen'));
   assert.ok(view.calls.some(c => c[0] === 'renderServicios'));
+});
+
+test('realtime: pausa al ocultarse y vuelve a suscribir al paciente al restaurar la pestaña', async () => {
+  const subscriptions = [];
+  const { controller } = setup({
+    session: { user: { id: 'u1' } },
+    api: {
+      getPatientRecord: async () => makeRecord([]),
+      subscribeToPatient: hc => {
+        const subscription = { hc, stopped: false };
+        subscriptions.push(subscription);
+        return () => { subscription.stopped = true; };
+      }
+    }
+  });
+  await controller.init();
+  await controller.loadPatient('2026-1');
+
+  document.visibilityState = 'hidden';
+  dispatch('visibilitychange');
+  assert.equal(subscriptions[0].stopped, true);
+
+  document.visibilityState = 'visible';
+  dispatch('visibilitychange');
+  assert.equal(subscriptions.length, 2);
+  assert.equal(subscriptions[1].hc, '2026-1');
 });
 
 test('init(): una sesión restaurada sin actividad reciente se revoca y no abre el dashboard', async () => {
