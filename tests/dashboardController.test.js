@@ -118,6 +118,34 @@ test('init(): con sesión activa, entra directo y carga servicios', async () => 
   assert.ok(view.calls.some(c => c[0] === 'renderServicios'));
 });
 
+test('init(): restaura el paciente del historial de pestaña y goToRound lo elimina', async () => {
+  const originalHistory = Object.getOwnPropertyDescriptor(globalThis, 'history');
+  const historyMock = {
+    state: { rondaCurrentPatientHC: '2026-1' },
+    replaceState(state) { this.state = state; }
+  };
+  Object.defineProperty(globalThis, 'history', { configurable: true, value: historyMock });
+  const { controller, state } = setup({
+    session: { user: { id: 'u1' } },
+    api: {
+      getPatientRecord: async () => makeRecord([]),
+      subscribeToPatient: () => () => {}
+    }
+  });
+  try {
+    await controller.init();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(state.get().currentHC, '2026-1');
+
+    controller.goToRound();
+    assert.equal(historyMock.state.rondaCurrentPatientHC, undefined);
+    assert.equal(state.get().record, null);
+  } finally {
+    if (originalHistory) Object.defineProperty(globalThis, 'history', originalHistory);
+    else delete globalThis.history;
+  }
+});
+
 test('realtime: pausa al ocultarse y vuelve a suscribir al paciente al restaurar la pestaña', async () => {
   const subscriptions = [];
   const { controller } = setup({

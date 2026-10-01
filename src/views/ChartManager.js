@@ -18,28 +18,31 @@ export class ChartManager {
     return this.#loadPromise;
   }
 
-  async render(canvasId, labels, datasets) {
+  async render(canvasId, labels, datasets, { yAxis = {} } = {}) {
     this.destroy();
     const Chart = await this.#getChart();
     const canvas = document.getElementById(canvasId);
     if (!canvas?.isConnected) return;
+    const darkTheme = document.body.classList.contains('theme-dark');
+    const axisText = darkTheme ? '#B0BFBB' : '#5C6B67';
+    const gridColor = darkTheme ? '#394643' : '#EEF2F1';
     this.#chart = new Chart(canvas.getContext('2d'), {
       type: 'line',
       data: { labels, datasets },
       options: {
         responsive: true, maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
-        plugins: { legend: { display: datasets.length > 1 } },
+        plugins: { legend: { display: datasets.length > 1, labels: { color: axisText } } },
         scales: {
-          x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-          y: { grid: { color: '#EEF2F1' }, ticks: { font: { size: 10 } } }
+          x: { grid: { display: false }, ticks: { color: axisText, font: { size: 10 } } },
+          y: { ...yAxis, grid: { color: gridColor }, ticks: { color: axisText, font: { size: 10 }, ...yAxis.ticks } }
         },
         elements: { point: { radius: 3, hoverRadius: 5 }, line: { tension: 0.3 } }
       }
     });
   }
 
-  async toDataUrl(labels, datasets) {
+  async toDataUrl(labels, datasets, { yAxis = {} } = {}) {
     const Chart = await this.#getChart();
     const canvas = document.createElement('canvas');
     canvas.width = 1400;
@@ -53,7 +56,7 @@ export class ChartManager {
         plugins: { legend: { display: datasets.length > 1 } },
         scales: {
           x: { grid: { display: false }, ticks: { font: { size: 10 }, maxTicksLimit: 18 } },
-          y: { grid: { color: '#EEF2F1' }, ticks: { font: { size: 12 } } }
+          y: { grid: { color: '#EEF2F1' }, ticks: { font: { size: 12 }, ...yAxis.ticks }, ...yAxis }
         },
         elements: { point: { radius: 2 }, line: { tension: 0.3 } }
       }

@@ -18,15 +18,49 @@ test('fase 3: preferencias de UI solo persisten configuración, no PHI', () => {
     setItem: (k, v) => store.set(k, String(v))
   };
   try {
-    assert.deepEqual(readUiPreferences(), { density: 'normal', highContrast: false });
-    writeUiPreferences({ density: 'compact', highContrast: true });
-    assert.deepEqual(readUiPreferences(), { density: 'compact', highContrast: true });
+    assert.deepEqual(readUiPreferences(), { density: 'normal', highContrast: false, darkTheme: false });
+    writeUiPreferences({ density: 'compact', highContrast: true, darkTheme: true });
+    assert.deepEqual(readUiPreferences(), { density: 'compact', highContrast: true, darkTheme: true });
     const key = timelineReadKey('user-1', 'HC-1');
     assert.match(key, /^ronda\.timeline\.read\.v1:[a-z0-9]+:[a-z0-9]+$/);
     assert.equal(key.includes('HC-1'), false);
   } finally {
     if (original === undefined) delete globalThis.localStorage; else globalThis.localStorage = original;
   }
+});
+
+test('tema oscuro: el control alterna la clase global y anuncia la acción disponible', async () => {
+  const { DashboardView } = await import('../src/views/DashboardView.js');
+  const classes = new Set();
+  const attributes = {};
+  const themeButton = {
+    innerHTML: '',
+    setAttribute: (name, value) => { attributes[name] = value; }
+  };
+  const view = new DashboardView({
+    getElementById: () => null,
+    body: { classList: {
+      add: name => classes.add(name),
+      remove: name => classes.delete(name),
+      toggle: (name, force) => force ? classes.add(name) : classes.delete(name)
+    } },
+    querySelector: () => null,
+    querySelectorAll: selector => selector.includes('toggle-theme') ? [themeButton] : []
+  });
+
+  view.setUiPreferences({ darkTheme: true });
+  assert.equal(classes.has('theme-dark'), true);
+  assert.equal(attributes['aria-pressed'], 'true');
+  assert.equal(attributes['aria-label'], 'Cambiar a tema claro');
+  assert.match(themeButton.innerHTML, /<svg/);
+});
+
+test('navegación y encabezado: regreso a ronda disponible y botón manual de actualización retirado', () => {
+  const html = read('index.html');
+  const view = read('src/views/DashboardView.js');
+  assert.match(view, /data-action="go-round"[\s\S]*Ronda de hoy/);
+  assert.doesNotMatch(html, /Actualizar datos del paciente|data-action="refresh"/);
+  assert.match(html, /data-action="toggle-theme"/);
 });
 
 test('fase 3: novedades cuenta eventos posteriores a la última revisión', () => {

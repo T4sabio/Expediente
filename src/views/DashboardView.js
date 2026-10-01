@@ -146,12 +146,20 @@ export class DashboardView {
     this.#el.round.innerHTML = `<div class="rounded-xl border border-hairline bg-white p-5 animate-pulse"><div class="h-4 w-40 rounded bg-[#EEF2F1]"></div><div class="mt-3 h-3 w-72 rounded bg-[#EEF2F1]"></div><div class="mt-5 h-48 rounded-lg bg-[#EEF2F1]"></div></div>`;
   }
 
-  setUiPreferences({ density = 'normal', highContrast = false } = {}) {
+  setUiPreferences({ density = 'normal', highContrast = false, darkTheme = false } = {}) {
     const body = this.#doc.body;
     body.classList.remove('density-compact', 'density-normal', 'density-comfortable');
     body.classList.add(`density-${density}`);
     body.classList.toggle('contrast-high', Boolean(highContrast));
+    body.classList.toggle('theme-dark', Boolean(darkTheme));
     this.#doc.querySelector('[data-action="toggle-contrast"]')?.setAttribute('aria-pressed', String(Boolean(highContrast)));
+    const themeButtons = this.#doc.querySelectorAll?.('[data-action="toggle-theme"]') ?? [];
+    themeButtons.forEach(themeButton => {
+      themeButton.setAttribute('aria-pressed', String(Boolean(darkTheme)));
+      themeButton.setAttribute('aria-label', darkTheme ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro');
+      themeButton.setAttribute('title', darkTheme ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro');
+      themeButton.innerHTML = icon(darkTheme ? 'sun' : 'moon');
+    });
   }
 
   setNovedadesCount(count) {
@@ -221,6 +229,10 @@ export class DashboardView {
     this.#el.header.innerHTML = `
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div class="min-w-[240px]">
+          <button type="button" data-action="go-round" title="Volver a Ronda de hoy" class="mb-2 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-[#3C4A46] hover:bg-[#EEF2F1] focus:outline-none focus:ring-2 focus:ring-accent">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M19 12H5m0 0 6 6m-6-6 6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Ronda de hoy
+          </button>
           <div class="flex items-center gap-2 text-xs text-[#5C6B67] font-mono-data">${esc(g.HC)} · Ingreso ${fmtDate(g.Fecha_Ingreso)} · ${esc(g.Estado_Episodio || 'Hospitalizado')}</div>
           <div class="flex items-center gap-2 mt-0.5">
             <h1 class="text-xl font-semibold">${esc(g.Nombre_Completo)}</h1>

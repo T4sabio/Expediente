@@ -80,6 +80,25 @@ test('laboratorios: tabla reciente primero y gráfico usa historial completo cro
   assert.deepEqual(rendered[0][2][0].data, [1, 2]);
 });
 
+test('signos vitales: presión arterial usa eje fijo de 0 a 300 en intervalos de 20', async () => {
+  const { vitalesSection } = await import('../src/views/sections/vitales.js');
+  const rendered = [];
+  const record = new PatientRecord({
+    patient: new Patient({ HC: '1', Nombre_Completo: 'Ana' }),
+    vitals: [new VitalSigns({ Fecha_Hora: '2026-09-24T20:00:00Z', PA_Sistolica: 120, PA_Diastolica: 80, Frecuencia_Cardiaca: 70, SpO2: 98, Temperatura: 36.5, Frecuencia_Respiratoria: 16 })]
+  });
+  const select = { value: 'presion', addEventListener() {} };
+  const originalDocument = globalThis.document;
+  globalThis.document = { getElementById: () => null };
+  try {
+    vitalesSection.mount({ querySelector: () => select }, record, { charts: { render: (...args) => rendered.push(args) } });
+    assert.deepEqual(rendered[0][3], { yAxis: { min: 0, max: 300, ticks: { stepSize: 20 } } });
+  } finally {
+    if (originalDocument === undefined) delete globalThis.document;
+    else globalThis.document = originalDocument;
+  }
+});
+
 test('resumen: incluye antibióticos antiguos y periodicidad aunque el cultivo tenga resultado', () => {
   const trackedMedications = Array.from({ length: 7 }, (_, index) => new Medication({
     id: index + 1, Activo: 'Sí', Requiere_Seguimiento_Dias: true,

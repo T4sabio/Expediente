@@ -1,7 +1,7 @@
 const PREF_KEY = 'ronda.ui.preferences.v1';
 const TIMELINE_PREFIX = 'ronda.timeline.read.v1';
 
-const DEFAULTS = Object.freeze({ density: 'normal', highContrast: false });
+const DEFAULTS = Object.freeze({ density: 'normal', highContrast: false, darkTheme: false });
 
 function storage() {
   try { return globalThis.localStorage; } catch { return null; }
@@ -14,7 +14,8 @@ export function readUiPreferences() {
     const value = JSON.parse(s.getItem(PREF_KEY) || '{}');
     return {
       density: ['compact', 'normal', 'comfortable'].includes(value.density) ? value.density : DEFAULTS.density,
-      highContrast: Boolean(value.highContrast)
+      highContrast: Boolean(value.highContrast),
+      darkTheme: Boolean(value.darkTheme)
     };
   } catch { return { ...DEFAULTS }; }
 }

@@ -47,5 +47,6 @@ export const createInitialState = (ui = {}) => ({
   userId: null,
   role: null,
   density: ui.density ?? 'normal',
-  highContrast: Boolean(ui.highContrast)
+  highContrast: Boolean(ui.highContrast),
+  darkTheme: Boolean(ui.darkTheme)
 });

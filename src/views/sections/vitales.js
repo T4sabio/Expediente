@@ -1,4 +1,4 @@
-import { VITAL_LABELS } from '../../utils/constants.js';
+import { BLOOD_PRESSURE_CHART_AXIS, VITAL_LABELS } from '../../utils/constants.js';
 import { fmtDateTime } from '../../utils/formatters.js';
 import { sectionHeader, tableWrap, emptyRow, cellFlag, abnormalMark, paginationControls } from '../components.js';
 
@@ -52,7 +52,9 @@ function drawChart(charts, vitals, metric) {
         { label: 'PAM', data: vitals.map(r => r.PAM), borderColor: '#4263A5', backgroundColor: '#4263A5', borderDash: [5, 4], fill: false }
       ]
       : [{ label: VITAL_LABELS[metric] ?? metric, data: vitals.map(r => r[metric]), borderColor: '#1F7A6C', backgroundColor: '#E4F1EE', fill: true }];
-  charts.render('vitalChart', labels, datasets);
+  charts.render('vitalChart', labels, datasets, metric === 'presion' ? {
+    yAxis: { min: BLOOD_PRESSURE_CHART_AXIS.min, max: BLOOD_PRESSURE_CHART_AXIS.max, ticks: { stepSize: BLOOD_PRESSURE_CHART_AXIS.stepSize } }
+  } : {});
   const alt = document.getElementById('vitalChartTextAlt');
   if (alt) alt.innerHTML = chartTextAlternative(vitals, metric);
 }

@@ -53,6 +53,8 @@ export const VITAL_LABELS = Object.freeze({
   PAM: 'PAM'
 });
 
+export const BLOOD_PRESSURE_CHART_AXIS = Object.freeze({ min: 0, max: 300, stepSize: 20 });
+
 export const PROLONGED_TREATMENT_DAYS = 14;
 
 /**

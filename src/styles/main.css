@@ -98,6 +98,54 @@ body.contrast-high .bg-canvas { background-color: #FFFFFF !important; }
 body.contrast-high .bg-accent-soft { background-color: #D6EAE5 !important; }
 body.contrast-high :focus-visible { outline: 3px solid #12312E !important; outline-offset: 2px; }
 
+/* Tema oscuro de aplicación: conserva colores clínicos de estado y ajusta superficies. */
+body.theme-dark {
+  color-scheme: dark;
+  background-color: #151c1b !important;
+  color: #e7efed;
+}
+body.theme-dark .bg-white { background-color: #202a28 !important; }
+body.theme-dark .bg-canvas { background-color: #151c1b !important; }
+body.theme-dark .bg-accent-soft { background-color: #1c3a35 !important; }
+body.theme-dark .bg-critical-soft { background-color: #412722 !important; }
+body.theme-dark .bg-warn-soft { background-color: #3e3421 !important; }
+body.theme-dark .bg-ok-soft { background-color: #20392b !important; }
+body.theme-dark .text-ink,
+body.theme-dark [class*="text-[#17211F]"] { color: #e7efed !important; }
+body.theme-dark [class*="text-[#3C4A46]"] { color: #d0dad7 !important; }
+body.theme-dark [class*="text-[#5C6B67]"] { color: #b0bfbb !important; }
+body.theme-dark [class*="text-[#7C8784]"] { color: #94a49f !important; }
+body.theme-dark [class*="text-[#9AA6A2]"] { color: #82938e !important; }
+body.theme-dark [class*="text-[#B8863A]"] { color: #e6bf7a !important; }
+body.theme-dark .text-critical { color: #ff9b8e !important; }
+body.theme-dark .text-warn { color: #f0c875 !important; }
+body.theme-dark .text-ok { color: #8bd6a7 !important; }
+body.theme-dark .border-hairline { border-color: #394643 !important; }
+body.theme-dark [class*="bg-[#EEF2F1]"] { background-color: #2b3734 !important; }
+body.theme-dark [class*="bg-[#FAFCFC]"],
+body.theme-dark [class*="bg-[#F5F7F7]"] { background-color: #26312f !important; }
+body.theme-dark [class*="bg-[#FBF4E8]"] { background-color: #3e3421 !important; }
+body.theme-dark [class*="hover:bg-[#EEF2F1]"]:hover,
+body.theme-dark [class*="hover:bg-[#F5F7F7]"]:hover { background-color: #34423f !important; }
+body.theme-dark [class*="divide-[#EEF2F1]"] > :not([hidden]) ~ :not([hidden]) { border-color: #394643 !important; }
+body.theme-dark .rail-btn.active { background: #1c3a35; color: #e7efed; }
+body.theme-dark .rail-btn-m.active { background: #1c3a35; color: #fff; border-color: #1c3a35; }
+body.theme-dark table.clinical thead th { color: #b0bfbb; }
+body.theme-dark table.clinical tbody tr { border-color: #394643; }
+body.theme-dark table.clinical tbody tr:hover { background: #26312f; }
+body.theme-dark input:not(#patientSearch),
+body.theme-dark select,
+body.theme-dark textarea { background-color: #202a28; color: #e7efed; border-color: #465650; }
+body.theme-dark input::placeholder,
+body.theme-dark textarea::placeholder { color: #94a49f; }
+body.theme-dark :focus-visible { outline-color: #7fd9c4; }
+body.theme-dark #patientHeader button[data-action="editar-paciente"] svg { filter: brightness(1.8); }
+body.theme-dark ::-webkit-scrollbar-thumb { background: #53635e; }
+@media print {
+  body.theme-dark .print-only { background: #fff !important; color: #111 !important; color-scheme: light; }
+  body.theme-dark .print-only .bg-white { background: #fff !important; }
+}
+
 /* Impresión profesional: cabecera/identificador y pie de página se repiten por página. */
 .print-confidential { margin-top: 6px; font-size: 10px; font-weight: 600; letter-spacing: .02em; color: #333; }
 .print-disclosure { margin-top: 6px; font-size: 9px; color: #555; }

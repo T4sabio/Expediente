@@ -1,4 +1,4 @@
-import { SECTIONS, SEARCH, DEFAULT_AGE_UNIT } from '../utils/constants.js';
+import { BLOOD_PRESSURE_CHART_AXIS, SECTIONS, SEARCH, DEFAULT_AGE_UNIT } from '../utils/constants.js';
 import { calendarDateOf, fmtDateTime, todayISODate } from '../utils/formatters.js';
 import { Patient } from '../models/Patient.js';
 import { listKeyForTable } from '../models/PatientRecord.js';
@@ -52,7 +52,7 @@ export class DashboardController {
     this.#api = api; this.#auth = auth; this.#state = state; this.#view = view;
     this.#modals = modals; this.#toast = toast; this.#charts = charts; this.#palette = palette;
     const prefs = readUiPreferences();
-    this.#state.set({ density: prefs.density, highContrast: prefs.highContrast });
+    this.#state.set({ density: prefs.density, highContrast: prefs.highContrast, darkTheme: prefs.darkTheme });
 
     this.#actions = {
       'switch-section': el => this.switchSection(el.dataset.section),
@@ -63,7 +63,7 @@ export class DashboardController {
       'confirm-search-patient': () => this.#confirmSearchPatient(),
       'cancel-search-patient': () => { this.#pendingSearchPatient = null; this.#modals.close('modal-confirmar-paciente'); },
       'confirm-print-record': () => { this.#modals.close('modal-confirmar-impresion'); void this.#printRecord({ confirmed: true }); },
-      'refresh': () => { if (this.#state.get().currentHC) this.loadPatient(this.#state.get().currentHC, { silent: true }); },
+      'go-round': () => this.goToRound(),
       'nuevo-paciente': () => this.#modals.open('modal-nuevo-paciente', { Edad_Unidad: this.#state.get().lastAgeUnit }),
       'restaurar-paciente': () => this.#openRestorePatient(),
       'editar-paciente': () => this.#openEditPatient(),
@@ -82,7 +82,8 @@ export class DashboardController {
       'open-novedades': () => this.#openNovedades(),
       'mark-timeline-read': () => this.#markTimelineRead(),
       'cycle-density': () => this.#cycleDensity(),
-      'toggle-contrast': () => this.#toggleHighContrast()
+      'toggle-contrast': () => this.#toggleHighContrast(),
+      'toggle-theme': () => this.#toggleTheme()
     };
 
     // Formularios que solo agregan un registro al paciente abierto.
@@ -163,6 +164,10 @@ export class DashboardController {
         reportError(err, { origin: 'load-services', operation: 'listServicios' });
       }
       void this.#loadRound();
+      const savedHC = globalThis.history?.state?.rondaCurrentPatientHC;
+      if (typeof savedHC === 'string' && savedHC.length > 0 && savedHC.length <= 128) {
+        void this.loadPatient(savedHC);
+      }
     } catch (err) {
       reportError(err, { origin: 'profile', errorCode: err?.code ?? 'PROFILE_ERROR' });
       await this.#signOut(err instanceof InactiveUserError ? err.message : 'No se pudo verificar tu acceso.');
@@ -173,6 +178,7 @@ export class DashboardController {
     this.#stopIdleWatch();
     this.#modals.closeAll();
     this.#view.clearProtectedData();
+    this.#setHistoryPatient(null);
     this.#clearActivityTimestamp();
     this.#loadSeq++; this.#searchSeq++;
     this.#stopRealtime();
@@ -271,7 +277,7 @@ export class DashboardController {
         ? await this.#charts.toDataUrl(vitals.map(row => fmtDateTime(row.Fecha_Hora)), [
           { label: 'Sistólica', data: vitals.map(row => row.PA_Sistolica), borderColor: '#1F7A6C', backgroundColor: '#1F7A6C', fill: false },
           { label: 'Diastólica', data: vitals.map(row => row.PA_Diastolica), borderColor: '#B8863A', backgroundColor: '#B8863A', fill: false }
-        ])
+        ], { yAxis: { min: BLOOD_PRESSURE_CHART_AXIS.min, max: BLOOD_PRESSURE_CHART_AXIS.max, ticks: { stepSize: BLOOD_PRESSURE_CHART_AXIS.stepSize } } })
         : null;
       const graphMarkup = graph
         ? `<img class="print-chart" src="${graph}" alt="Gráfico de presión arterial con ${vitals.length} registros">`
@@ -479,7 +485,7 @@ export class DashboardController {
   #onStateChange(s, prev) {
     if (s.servicios !== prev.servicios) this.#view.renderServicios(s.servicios);
     if (s.round !== prev.round) this.#view.renderRound(s.round);
-    if (s.density !== prev.density || s.highContrast !== prev.highContrast) this.#view.setUiPreferences(s);
+    if (s.density !== prev.density || s.highContrast !== prev.highContrast || s.darkTheme !== prev.darkTheme) this.#view.setUiPreferences(s);
     if (s.newActivityCount !== prev.newActivityCount) this.#view.setNovedadesCount(s.newActivityCount);
 
     if (s.searchResults !== prev.searchResults) {
@@ -662,6 +668,18 @@ export class DashboardController {
     this.loadPatient(patient.HC);
   }
 
+  #setHistoryPatient(hc) {
+    const history = globalThis.history;
+    if (!history?.replaceState) return;
+    try {
+      const state = history.state && typeof history.state === 'object' ? history.state : {};
+      const next = { ...state };
+      if (hc) next.rondaCurrentPatientHC = hc;
+      else delete next.rondaCurrentPatientHC;
+      history.replaceState(next, '');
+    } catch {}
+  }
+
   /* ================================================================
      Carga de paciente
      ================================================================ */
@@ -670,6 +688,7 @@ export class DashboardController {
     const perfStart = `patient-load-${seq}`;
     markPerformance(perfStart);
     if (!silent) {
+      this.#setHistoryPatient(hc);
       // Nunca dejar visible el expediente de otro paciente mientras carga el nuevo.
       this.#state.set({ record: null, currentHC: hc, timelineLoadedFor: null, syncStatus: 'syncing', lastSyncedAt: null, newActivityCount: 0, lastViewedTimelineAt: getTimelineReadAt(this.#state.get().userId, hc) });
       this.#view.showPatientLoading();
@@ -683,6 +702,7 @@ export class DashboardController {
         ? (this.#state.get().syncStatus === 'offline' ? 'offline' : 'live')
         : 'syncing';
       this.#state.set({ record, currentHC: hc, timelineLoadedFor: null, lastViewedTimelineAt: lastViewedAt, newActivityCount: unread, syncStatus, lastSyncedAt: Date.now() });
+      this.#view.setSearchText(record.patient.Nombre_Completo);
       if (!silent && this.#api.recordPatientRead) void this.#api.recordPatientRead(hc).catch(err => reportError(err, { origin: 'audit-patient-read' }));
       if (lastViewedAt) void this.#refreshTimelineUnread(hc, lastViewedAt);
       measurePerformance('patient-load', perfStart);
@@ -691,7 +711,7 @@ export class DashboardController {
       if (seq !== this.#loadSeq) return;
       this.#toast.show('No se pudo cargar el paciente. Intenta nuevamente.', 'error', { persistent: true, id: 'patient-load-error' });
       reportError(err, { origin: 'load-patient', hc });
-      if (!silent) { this.#state.set({ currentHC: null }); this.#view.showEmptyState(); }
+      if (!silent) { this.#setHistoryPatient(null); this.#state.set({ currentHC: null }); this.#view.showEmptyState(); }
     }
   }
 
@@ -718,6 +738,7 @@ export class DashboardController {
     if (next === null) {
       this.#loadSeq++;
       this.#stopRealtime();
+      this.#setHistoryPatient(null);
       this.#state.set({ record: null, currentHC: null, searchResults: null });
       this.#view.setSearchText('');
       this.#view.showEmptyState();
@@ -867,9 +888,16 @@ export class DashboardController {
     this.#toast.show(highContrast ? 'Alto contraste activado.' : 'Alto contraste desactivado.');
   }
 
+  #toggleTheme() {
+    const darkTheme = !this.#state.get().darkTheme;
+    writeUiPreferences({ darkTheme });
+    this.#state.set({ darkTheme });
+  }
+
   goToRound() {
     this.#loadSeq++;
     this.#stopRealtime();
+    this.#setHistoryPatient(null);
     this.#state.set({ record: null, currentHC: null, currentSection: 'resumen', timelineLoadedFor: null, syncStatus: 'idle', lastSyncedAt: null });
     this.#view.setSearchText('');
     this.#state.set({ searchResults: null });
