@@ -3,7 +3,7 @@
 ## Puesta en marcha
 ```bash
 npm ci
-cp .env.example .env.local     # completa VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY
+cp .env.example .env.local     # completa VITE_SUPABASE_URL y VITE_SUPABASE_PUBLISHABLE_KEY
 # Supabase → SQL Editor: ejecutar EN ORDEN
 #   0) supabase/000_schema.sql            ← crea las 7 tablas (solo en un proyecto NUEVO/vacío)
 #   1) supabase/001_search_and_indexes.sql
@@ -40,7 +40,7 @@ npm run build                  # salida en dist/
    solo las verificadas. Las nuevas altas se crean inactivas y no leen expedientes
    hasta que un administrador establezca `activo = true` y asigne el rol adecuado.
 4. **Usa un proyecto Supabase separado para Vercel Preview.** Si conectaste
-   las mismas variables `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` a
+   las mismas variables `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` a
    Production y a Preview en Vercel, cada Pull Request que abras leerá y
    escribirá sobre datos reales de pacientes. En Vercel → Project Settings →
    Environment Variables, crea un segundo proyecto Supabase "de desarrollo"
@@ -128,7 +128,7 @@ supabase test db
 
 ```bash
 SUPABASE_TEST_URL=http://127.0.0.1:54321 \
-SUPABASE_TEST_ANON_KEY=... \
+SUPABASE_TEST_PUBLISHABLE_KEY=... \
 SUPABASE_TEST_SERVICE_ROLE_KEY=... \
 npm run test:integration
 ```

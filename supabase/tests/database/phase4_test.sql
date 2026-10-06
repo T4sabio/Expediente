@@ -13,8 +13,8 @@ select is(
     '{"Dosis_Frecuencia":"1 g IV"}'::jsonb,
     '{"Dosis_Frecuencia":"2 g IV","Nombre_Completo":"Nombre protegido"}'::jsonb
   ),
-  '{"old":{"Dosis_Frecuencia":"1 g IV"},"new":{"Dosis_Frecuencia":"2 g IV"}}'::jsonb,
-  'la auditoría conserva el cambio clínico y omite identidad directa'
+  '{"Dosis_Frecuencia":true}'::jsonb,
+  'la auditoría conserva solo nombres de campos modificados y omite valores/identidad directa'
 );
 
 select * from finish();

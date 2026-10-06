@@ -225,10 +225,9 @@ export class ApiService {
     return { data: null, error: new ApiError('La última actividad requiere desplegar la función SQL "ultima_actividad_paciente".', error) };
   }
 
-  async recordPatientPrint(hc, recordCounts) {
+  async recordPatientPrint(hc, _recordCounts) {
     const { error } = await this.#db.rpc('registrar_impresion_expediente', {
-      p_hc: hc,
-      p_registros: recordCounts
+      p_hc: hc
     });
     if (error) throw new ApiError('No se pudo registrar la impresión en auditoría.', error);
   }
@@ -238,10 +237,9 @@ export class ApiService {
     if (error) throw new ApiError('No se pudo registrar la lectura en auditoría.', error);
   }
 
-  async recordPatientExport(hc, recordCounts) {
+  async recordPatientExport(hc, _recordCounts) {
     const { error } = await this.#db.rpc('registrar_exporte_expediente', {
-      p_hc: hc,
-      p_registros: recordCounts
+      p_hc: hc
     });
     if (error) throw new ApiError('No se pudo registrar la exportación en auditoría.', error);
   }

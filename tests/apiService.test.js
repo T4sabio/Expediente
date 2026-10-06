@@ -236,12 +236,12 @@ test('deletePatient / restorePatient: usan RPC con motivo y devuelven la HC afec
   assert.deepEqual(db.calls.from, []);
 });
 
-test('recordPatientPrint: registra la HC y el conteo de registros mediante RPC', async () => {
+test('recordPatientPrint: registra solo la HC mediante RPC, sin payload de datos', async () => {
   const db = new MockSupabase({ rpcs: { registrar_impresion_expediente: { data: null, error: null } } });
   await new ApiService(db).recordPatientPrint('HC-9', { vitals: 30, labs: 4 });
   assert.deepEqual(db.calls.rpc.at(-1), {
     name: 'registrar_impresion_expediente',
-    params: { p_hc: 'HC-9', p_registros: { vitals: 30, labs: 4 } }
+    params: { p_hc: 'HC-9' }
   });
 });
 
@@ -255,7 +255,7 @@ test('recordPatientRead / recordPatientExport: registran acceso y salida clínic
   await api.recordPatientExport('HC-8', { vitals: 12 });
   assert.deepEqual(db.calls.rpc, [
     { name: 'registrar_lectura_expediente', params: { p_hc: 'HC-8' } },
-    { name: 'registrar_exporte_expediente', params: { p_hc: 'HC-8', p_registros: { vitals: 12 } } }
+    { name: 'registrar_exporte_expediente', params: { p_hc: 'HC-8' } }
   ]);
 });
 

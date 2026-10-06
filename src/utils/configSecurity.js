@@ -19,7 +19,7 @@ export function rejectPrivilegedJwt(key) {
       parts[1].replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - parts[1].length % 4) % 4)
     ));
     if (payload?.role && !['anon', 'authenticated'].includes(payload.role)) {
-      throw new Error('VITE_SUPABASE_ANON_KEY parece ser una clave privilegiada y no puede usarse en el navegador.');
+      throw new Error('La clave privilegiada de Supabase no puede usarse en el navegador.');
     }
   } catch (err) {
     if (err instanceof Error && err.message.includes('clave privilegiada')) throw err;

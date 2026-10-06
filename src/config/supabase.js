@@ -4,14 +4,14 @@ import { validateSupabaseUrl, rejectPrivilegedJwt } from '../utils/configSecurit
 /**
  * Crea el cliente de Supabase a partir de variables de entorno de Vite (.env.local).
  * IMPORTANTE: todo lo que empieza con VITE_ termina dentro del bundle del navegador.
- * La anon key es pública por diseño; la protección real de los datos son las políticas RLS
- * (ver supabase/001_search_and_indexes.sql). Nunca pongas aquí la service_role key.
+ * La publishable key es pública por diseño; la protección real de los datos son las políticas RLS.
+ * Nunca pongas aquí una secret/service_role key.
  */
 export function createSupabaseClient(env = import.meta.env) {
   const rawUrl = env.VITE_SUPABASE_URL;
-  const key = env.VITE_SUPABASE_ANON_KEY;
+  const key = env.VITE_SUPABASE_PUBLISHABLE_KEY ?? env.VITE_SUPABASE_ANON_KEY;
   if (!rawUrl || !key) {
-    throw new Error('Faltan VITE_SUPABASE_URL y/o VITE_SUPABASE_ANON_KEY. Copia .env.example a .env.local y complétalo.');
+    throw new Error('Faltan VITE_SUPABASE_URL y/o VITE_SUPABASE_PUBLISHABLE_KEY. Copia .env.example a .env.local y complétalo.');
   }
   const url = validateSupabaseUrl(rawUrl, env.MODE);
   rejectPrivilegedJwt(key);

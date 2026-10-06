@@ -2,7 +2,7 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 
 const url = process.env.SUPABASE_TEST_URL;
-const anonKey = process.env.SUPABASE_TEST_ANON_KEY;
+const anonKey = process.env.SUPABASE_TEST_PUBLISHABLE_KEY ?? process.env.SUPABASE_TEST_ANON_KEY;
 const serviceKey = process.env.SUPABASE_TEST_SERVICE_ROLE_KEY;
 const enabled = Boolean(url && anonKey && serviceKey);
 const unique = `phase2-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -35,7 +35,7 @@ async function createRoleUser(role, label) {
 }
 
 before(async t => {
-  if (!enabled) { t.skip('Define SUPABASE_TEST_URL, SUPABASE_TEST_ANON_KEY y SUPABASE_TEST_SERVICE_ROLE_KEY para ejecutar integración contra Postgres/Supabase real.'); return; }
+  if (!enabled) { t.skip('Define SUPABASE_TEST_URL, SUPABASE_TEST_PUBLISHABLE_KEY (o el nombre legacy SUPABASE_TEST_ANON_KEY) y SUPABASE_TEST_SERVICE_ROLE_KEY para ejecutar integración contra Postgres/Supabase real.'); return; }
   ({ createClient } = await import('@supabase/supabase-js'));
   ({ ApiService } = await import('../../src/services/ApiService.js'));
   admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
