@@ -271,13 +271,10 @@ begin
   end loop;
 end $$;
 
--- Los anteriores helpers públicos eran necesarios para los triggers históricos.
--- Ya no deben ser accesibles ni quedar como SECURITY DEFINER en public.
-drop function if exists public.f_nuevo_usuario_personal();
-drop function if exists public.f_set_auditoria();
-drop function if exists public.f_bloquear_identidad_expediente();
-drop function if exists public.f_registrar_auditoria();
-drop function if exists public.f_set_fechas_clinicas_guatemala();
+-- Los antiguos helpers públicos se eliminan al final de la migración, DESPUÉS
+-- de haber reasignado todos los triggers que todavía dependen de ellos.
+-- No usar DROP ... CASCADE: los triggers deben conservarse y apuntar a los
+-- nuevos helpers privados.
 
 -- ---------------------------------------------------------------------------
 -- 4) RLS: las políticas consultan directamente el helper privado.

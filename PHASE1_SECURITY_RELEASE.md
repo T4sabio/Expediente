@@ -26,3 +26,7 @@ MFA operativo, rate limiting específico de aplicación, separación multi-hospi
 - Las migraciones SQL nuevas no se ejecutaron contra un PostgreSQL/Supabase real en este entorno porque no está disponible una instancia/CLI operativa para aplicarlas. Deben validarse contra la base local/CI antes del despliegue.
 
 Por estas limitaciones, esta fase **no debe considerarse una certificación de seguridad ni un pentest**.
+
+## Corrección posterior — orden de dependencias PostgreSQL
+
+Se corrigió la migración `20260929000017_phase1_security_hardening.sql` para no eliminar `public.f_registrar_auditoria()` mientras los triggers `trg_bitacora` todavía dependían de ella. Los triggers se reasignan primero a `private.f_registrar_auditoria()` y solo después se elimina la función pública antigua. No se utiliza `DROP ... CASCADE`.
